@@ -10,18 +10,17 @@ import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 
-// In-memory session state
-const activeSessions = new Map<
-  string,
-  {
-    engine: RequirementEngine;
-    history: ConversationMessage[];
-    requirement: string;
-    teamMembers: TeamMemberProfile[];
-    dbId: string;
-    irId: string | null;
-  }
->();
+// Session state - persisted in DB for serverless compatibility
+// In-memory cache for active sessions
+interface SessionCache {
+  engine: RequirementEngine;
+  history: ConversationMessage[];
+  requirement: string;
+  teamMembers: TeamMemberProfile[];
+  dbId: string;
+  irId: string | null;
+}
+const activeSessions = new Map<string, SessionCache>();
 
 async function getTeamProfiles(): Promise<TeamMemberProfile[]> {
   const allMembers = await db
@@ -153,12 +152,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const session = activeSessions.get(sessionId);
+    let session = activeSessions.get(sessionId);
+
+    // BE-1 Fix: If session not in memory, try to load from DB (serverless cold start)
     if (!session) {
-      return NextResponse.json(
-        { error: "Session not found. Start a new analysis." },
-        { status: 400 }
-      );
+      const conversation = await db
+        .select()
+        .from(requirementConversations)
+        .where(eq(requirementConversations.sessionId, sessionId))
+        .get();
+
+      if (!conversation || conversation.status !== "active") {
+        return NextResponse.json(
+          { error: "Session not found or expired. Start a new analysis." },
+          { status: 400 }
+        );
+      }
+
+      // Find the IR for this conversation
+      const ir = await db
+        .select()
+        .from(requirements)
+        .where(eq(requirements.conversationId, conversation.id))
+        .get();
+
+      // Reconstruct session from DB
+      const teamMembers = await getTeamProfiles();
+      const engine = new RequirementEngine();
+      const history: ConversationMessage[] = JSON.parse(conversation.messages || "[]");
+
+      session = {
+        engine,
+        history,
+        requirement: conversation.requirement,
+        teamMembers,
+        dbId: conversation.id,
+        irId: ir?.id || null,
+      };
+      activeSessions.set(sessionId, session);
     }
 
     const { response, result } = await session.engine.continueAnalysis(
@@ -217,7 +248,7 @@ export async function POST(request: NextRequest) {
       sessionId,
       message: response,
       result,
-      furId,
+      furId, // BE-6 Fix: consistent field name
       done: !!result,
     });
   }
