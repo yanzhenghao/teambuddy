@@ -1,22 +1,42 @@
 import { db } from "@/db";
 import { requirements, tasks } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 
 export async function GET() {
   try {
     // Fetch all requirements
     const allRequirements = await db.select().from(requirements).all();
 
-    // Get task counts for ARs and FuRs
+    // Get task counts for all requirements
     const allTasks = await db.select().from(tasks).all();
 
     // Build tree with task counts
+    // For FuR, aggregate task counts from child ARs
     const requirementsWithCounts = allRequirements.map((req) => {
+      if (req.type === "fur") {
+        // FuR's tasks = sum of all child ARs' tasks
+        const childArs = allRequirements.filter(
+          (r) => r.parentId === req.id && r.type === "ar"
+        );
+        const arTaskCount = childArs.reduce((sum, ar) => {
+          const arTasks = allTasks.filter((t) => t.requirementId === ar.id);
+          return sum + arTasks.length;
+        }, 0);
+        const arCompletedCount = childArs.reduce((sum, ar) => {
+          const arTasks = allTasks.filter((t) => t.requirementId === ar.id && t.status === "done");
+          return sum + arTasks.length;
+        }, 0);
+        return {
+          ...req,
+          taskCount: arTaskCount,
+          completedTaskCount: arCompletedCount,
+        };
+      }
+
+      // For IR and AR, use direct task counts
       const reqTasks = allTasks.filter((t) => t.requirementId === req.id);
       const completedTasks = reqTasks.filter((t) => t.status === "done");
-
       return {
         ...req,
         taskCount: reqTasks.length,
@@ -24,8 +44,7 @@ export async function GET() {
       };
     });
 
-    // Auto-update FuR status based on task completion
-    // When all tasks done, auto-create AR (Allocation Requirement)
+    // Auto-update FuR status based on child AR task completion
     for (const req of requirementsWithCounts) {
       if (req.type === "fur" && req.taskCount > 0) {
         const allDone = req.completedTaskCount === req.taskCount;
@@ -38,27 +57,6 @@ export async function GET() {
             .where(eq(requirements.id, req.id))
             .run();
           req.status = newStatus;
-        }
-
-        // Auto-create AR when all tasks completed
-        if (allDone) {
-          const existingAr = requirementsWithCounts.find(
-            (r) => r.parentId === req.id && r.type === "ar"
-          );
-          if (!existingAr) {
-            const arId = randomUUID();
-            await db.insert(requirements).values({
-              id: arId,
-              parentId: req.id,
-              title: `[AR] ${req.title}`,
-              type: "ar",
-              status: "completed",
-              summary: `分配需求：${req.summary || req.title}`,
-              taskCount: 0,
-              completedTaskCount: 0,
-            }).run();
-            req._autoArCreated = arId;
-          }
         }
       }
     }

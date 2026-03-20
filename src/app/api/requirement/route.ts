@@ -223,6 +223,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ---- CONFIRM: Accept tasks and write them to DB ----
+  // Creates FuR (if not exists) and AR with tasks allocated to specific people
   if (action === "confirm") {
     if (!confirmedTasks || !Array.isArray(confirmedTasks)) {
       return NextResponse.json(
@@ -239,57 +240,101 @@ export async function POST(request: NextRequest) {
     }
 
     // Find the FuR under this IR
-    const furRecord = await db
+    let furRecord = await db
       .select()
       .from(requirements)
       .where(eq(requirements.parentId, irId))
       .get();
 
+    // Create FuR if not exists (e.g., manually added without conversation)
     if (!furRecord || furRecord.type !== "fur") {
-      return NextResponse.json(
-        { error: "FuR not found. Complete requirement analysis first." },
-        { status: 400 }
-      );
+      const furId = randomUUID();
+      await db.insert(requirements).values({
+        id: furId,
+        parentId: irId,
+        title: "功能需求",
+        type: "fur",
+        status: "in_progress",
+        summary: null,
+        taskCount: 0,
+        completedTaskCount: 0,
+      }).run();
+      furRecord = await db.select().from(requirements).where(eq(requirements.id, furId)).get();
     }
 
-    const created: string[] = [];
+    if (!furRecord) {
+      return NextResponse.json({ error: "Failed to create FuR" }, { status: 500 });
+    }
 
+    // Group tasks by suggested assignee to create AR per person
+    const tasksByAssignee = new Map<string, typeof confirmedTasks>();
     for (const t of confirmedTasks) {
-      const id = `t${Date.now()}-${randomUUID().slice(0, 4)}`;
-      const assigneeId = t.suggestedAssignee?.memberId || null;
+      const assigneeId = t.suggestedAssignee?.memberId || "unassigned";
+      if (!tasksByAssignee.has(assigneeId)) {
+        tasksByAssignee.set(assigneeId, []);
+      }
+      tasksByAssignee.get(assigneeId)!.push(t);
+    }
 
-      await db.insert(tasks)
-        .values({
-          id,
-          title: t.title,
-          description: t.description,
-          assigneeId,
-          priority: t.priority || "P2",
-          status: assigneeId ? "todo" : "unassigned",
-          category: t.category || "feature",
-          estimatedDays: t.estimatedDays || null,
-          createdFrom: "requirement_analysis",
-          requirementId: furRecord.id,
-        })
-        .run();
+    const arIds: string[] = [];
 
-      created.push(id);
+    // Create AR per assignee and link tasks to AR
+    for (const [assigneeId, assigneeTasks] of tasksByAssignee) {
+      const arId = randomUUID();
+      const assigneeName = assigneeId === "unassigned"
+        ? "未分配"
+        : (await db.select().from(members).where(eq(members.id, assigneeId)).get())?.name || "未知";
+
+      await db.insert(requirements).values({
+        id: arId,
+        parentId: furRecord.id,
+        title: `[AR] ${assigneeName}`,
+        type: "ar",
+        status: "in_progress",
+        summary: `分配给 ${assigneeName} 的任务`,
+        assigneeId: assigneeId === "unassigned" ? null : assigneeId,
+        taskCount: assigneeTasks.length,
+        completedTaskCount: 0,
+      }).run();
+      arIds.push(arId);
+
+      // Create tasks linked to AR
+      for (const t of assigneeTasks) {
+        const taskId = `t${Date.now()}-${randomUUID().slice(0, 4)}`;
+        const taskAssigneeId = t.suggestedAssignee?.memberId || null;
+
+        await db.insert(tasks)
+          .values({
+            id: taskId,
+            title: t.title,
+            description: t.description,
+            assigneeId: taskAssigneeId,
+            priority: t.priority || "P2",
+            status: taskAssigneeId ? "todo" : "unassigned",
+            category: t.category || "feature",
+            estimatedDays: t.estimatedDays || null,
+            createdFrom: "requirement_analysis",
+            requirementId: arId,
+          })
+          .run();
+      }
     }
 
     // Update FuR task count
+    const totalTasks = confirmedTasks.length;
     await db
       .update(requirements)
       .set({
-        taskCount: created.length,
+        taskCount: totalTasks,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(requirements.id, furRecord.id))
       .run();
 
     return NextResponse.json({
-      created: created.length,
-      taskIds: created,
+      created: totalTasks,
       furId: furRecord.id,
+      arIds,
     });
   }
 
@@ -368,6 +413,8 @@ export async function PUT(request: NextRequest) {
     }
 
     const arId = randomUUID();
+    const { assigneeId } = body;
+
     await db.insert(requirements).values({
       id: arId,
       parentId: parentId || null,
@@ -375,11 +422,12 @@ export async function PUT(request: NextRequest) {
       type: "ar",
       status: "pending",
       summary: summary || null,
+      assigneeId: assigneeId || null,
       taskCount: 0,
       completedTaskCount: 0,
     }).run();
 
-    return NextResponse.json({ id: arId, parentId: parentId || null, type: "ar" });
+    return NextResponse.json({ id: arId, parentId: parentId || null, type: "ar", assigneeId });
   }
 
   return NextResponse.json({ error: "Invalid action" }, { status: 400 });

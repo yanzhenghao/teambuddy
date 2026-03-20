@@ -85,14 +85,15 @@ export const users = sqliteTable("users", {
 });
 
 // ========== 需求层级表 (IR → FuR → AR) ==========
-// IR (Initial Requirement) - 注入需求/原始需求
-// FuR (Function Requirement) - 功能需求，从 IR 澄清分析得到
-// AR (Allocation Requirement) - 分配需求，从 FuR 分配到软件模块
+// IR (Initial Requirement) - 注入需求，原始需求经MKT/SE/产品分析后分解到平台版本
+// FuR (Function Requirement) - 功能需求，根据IR分配到具体的功能
+// AR (Allocation Requirement) - 分配需求，根据FuR分配到软件实现模块/具体人
 export const requirements = sqliteTable("requirements", {
   id: text("id").primaryKey(),
   parentId: text("parent_id"), // FuR's parent is IR, AR's parent is FuR
   title: text("title").notNull(), // requirement title
-  type: text("type").notNull(), // "ir" | "ar" | "fur"
+  type: text("type").notNull(), // "ir" | "fur" | "ar"
+  assigneeId: text("assignee_id"), // for AR: allocated to which member
   status: text("status").notNull().default("pending"), // "pending" | "in_progress" | "completed"
   summary: text("summary"), // AI analysis summary
   conversationId: text("conversation_id"), // links to requirementConversations
