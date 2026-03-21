@@ -1,0 +1,676 @@
+{
+  "project": "TeamBuddy",
+  "description": "研发小组管家 Agent - 每日进展收集、可视化看板、需求澄清与任务分配",
+  "tech_stack": "TypeScript / Next.js (App Router) / Drizzle + SQLite / Claude API / Recharts",
+  "features": [
+    {
+      "id": "F001",
+      "category": "基础设施",
+      "description": "项目脚手架搭建：Next.js App Router + Drizzle ORM + SQLite + Tailwind CSS",
+      "status": "done",
+      "phase": 1,
+      "verification_steps": [
+        "npm run dev 能正常启动",
+        "数据库迁移能正常执行",
+        "访问 localhost:3000 能看到页面"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F002",
+      "category": "数据模型",
+      "description": "核心数据模型定义：成员(Member)、任务(Task)、日报(DailyUpdate)、对话记录(Conversation)",
+      "status": "done",
+      "phase": 1,
+      "verification_steps": [
+        "Drizzle schema 定义完整",
+        "数据库迁移生成并执行成功",
+        "CRUD API 路由可用"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F003",
+      "category": "通道适配",
+      "description": "Channel Adapter 抽象接口 + CLI 模拟适配器（用于开发测试）",
+      "status": "done",
+      "phase": 1,
+      "verification_steps": [
+        "ChannelAdapter 接口定义完成",
+        "CLIAdapter 实现完成",
+        "可通过终端模拟 Agent 与组员对话"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F004",
+      "category": "对话引擎",
+      "description": "对话引擎核心：调用 Claude API 进行 standup 对话，从自然语言提取结构化进展信息",
+      "status": "done",
+      "phase": 1,
+      "verification_steps": [
+        "Agent 能发起 standup 对话",
+        "能从组员回复中提取：昨日完成、今日计划、阻塞项",
+        "提取结果存入数据库",
+        "支持上下文记忆（引用上次对话内容）"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F005",
+      "category": "可视化",
+      "description": "Web 看板视图：按人/按项目查看任务状态（待办/进行中/已完成）",
+      "status": "done",
+      "phase": 1,
+      "verification_steps": [
+        "看板页面可访问",
+        "任务按状态分列显示",
+        "支持按成员或项目筛选",
+        "可拖拽改变任务状态"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F006",
+      "category": "可视化",
+      "description": "甘特图视图：时间线展示各任务进度、预估工期 vs 实际工期",
+      "status": "done",
+      "phase": 1,
+      "verification_steps": [
+        "甘特图页面可访问",
+        "任务按时间线排列",
+        "显示预估 vs 实际进度对比",
+        "支持按成员/项目筛选"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F007",
+      "category": "调度",
+      "description": "定时调度器：每日定时触发 standup 对话收集（node-cron）",
+      "status": "done",
+      "phase": 2,
+      "verification_steps": [
+        "调度器可配置触发时间",
+        "到时间自动对每个组员发起对话",
+        "对话结果自动入库",
+        "支持手动触发"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F008",
+      "category": "需求管理",
+      "description": "需求澄清引擎：接收模糊需求 → LLM 拆解 → 提出澄清问题 → 确认后生成子任务",
+      "status": "done",
+      "phase": 2,
+      "verification_steps": [
+        "可输入一段需求描述",
+        "Agent 自动提出澄清问题",
+        "用户确认后自动拆解为子任务",
+        "子任务写入任务表"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F009",
+      "category": "需求管理",
+      "description": "智能任务分配：基于组员画像（技能标签+当前负载）推荐分配方案，管理者审批后执行",
+      "status": "done",
+      "phase": 2,
+      "verification_steps": [
+        "组员画像可配置（技能标签、擅长领域）",
+        "分配建议考虑当前负载",
+        "管理者可审批/调整分配",
+        "确认后通知对应组员"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F010",
+      "category": "报告",
+      "description": "日报自动生成：汇总当日所有人进展，生成团队日报（文本+卡片格式）",
+      "status": "done",
+      "phase": 2,
+      "verification_steps": [
+        "每日对话结束后自动生成日报",
+        "日报包含：完成项、进行中、阻塞项、风险预警",
+        "可在 Web 端查看历史日报",
+        "支持导出为卡片图片格式"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F011",
+      "category": "预警",
+      "description": "风险预警系统：超期任务、连续N天无进展、高负载成员自动告警",
+      "status": "done",
+      "phase": 2,
+      "verification_steps": [
+        "检测到超期任务时生成预警",
+        "检测到连续3天无进展时生成预警",
+        "检测到成员负载过高时生成预警",
+        "预警在 Dashboard 上高亮显示"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F012",
+      "category": "通道适配",
+      "description": "真实 IM 适配器：对接实际通讯软件（企业微信/飞书/钉钉/自研IM）",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "至少一个真实 IM 适配器实现",
+        "可通过 IM 发送消息给组员",
+        "可接收组员在 IM 中的回复",
+        "消息卡片在 IM 中正确渲染"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F013",
+      "category": "对话引擎",
+      "description": "对话体验优化：智能追问、渐进式采集、情绪感知、对话频率自适应",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "Agent 能根据历史动态调整问题",
+        "新成员首次对话收集更多信息（建立画像）",
+        "后续对话只问增量变化",
+        "检测到组员消极情绪时调整沟通方式"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F014",
+      "category": "安全",
+      "description": "权限控制：管理者/组员角色区分，数据可见性控制",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "管理者可查看所有人数据",
+        "组员只能看到自己的任务和进展",
+        "敏感操作（分配、删除）仅管理者可执行",
+        "API 路由有权限校验"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F015",
+      "category": "需求管理",
+      "description": "IR/FuR/AR 层级树形结构：需求按 Initial Requirement → Function Requirement → Allocation Requirement 三层展开，支持折叠/展开、状态追踪",
+      "status": "done",
+      "phase": 2,
+      "verification_steps": [
+        "树形结构展示 IR → FuR → AR 层级",
+        "可折叠/展开子节点",
+        "状态标签显示（pending/in_progress/completed）",
+        "任务计数显示"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F016",
+      "category": "需求管理",
+      "description": "版本/迭代管理：需求支持按版本/迭代隔离，支持多版本并行开发，便于按版本追踪需求完成率和管理发版计划",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "可创建和切换版本视图",
+        "IR/FuR/AR 关联到特定版本",
+        "按版本筛选需求树",
+        "版本完成率可视化"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F017",
+      "category": "需求管理",
+      "description": "需求变更历史：记录需求每次修改的内容、变更人和时间，支持查看历史版本和变更追溯",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "需求修改时自动记录变更快照",
+        "可查看需求历史版本列表",
+        "显示每次变更的内容diff",
+        "记录变更操作人"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F018",
+      "category": "需求管理",
+      "description": "AI 自动分类：LLM 根据需求内容自动推荐 IR/FuR/AR 类型，并可一键应用推荐分类",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "输入需求描述后 AI 推荐类型",
+        "显示推荐理由",
+        "可一键应用或手动调整",
+        "记录分类决策历史"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F019",
+      "category": "需求管理",
+      "description": "智能任务分解：AI 根据 FuR 内容自动建议 AR 的任务拆分方案，包括任务描述、预估工期、推荐人选",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "FuR 确认后 AI 自动分析",
+        "输出 AR 任务拆分建议列表",
+        "每项任务包含：描述、工期、技能要求、推荐人选",
+        "支持调整后一键创建任务"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F020",
+      "category": "需求管理",
+      "description": "需求依赖关系图：支持声明 FuR/AR 间的前置/后置依赖，可视化依赖关系图，识别关键路径",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "可设置需求间依赖关系",
+        "依赖关系可视化展示",
+        "自动检测循环依赖并提示",
+        "基于依赖计算关键路径"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F021",
+      "category": "预警",
+      "description": "风险预警增强：AR 关联的任务超期时自动推送提醒，支持邮件/IM多种通知渠道",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "AR 任务超期自动检测",
+        "推送预警通知",
+        "支持配置通知渠道",
+        "预警可标记已处理"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F022",
+      "category": "可视化",
+      "description": "燃尽图：需求完成度可视化，跟踪剩余工作随时间的递减趋势",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "按 IR/FuR/AR 查看燃尽图",
+        "显示计划 vs 实际完成曲线",
+        "支持多版本燃尽图对比",
+        "预测剩余完成时间"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F023",
+      "category": "需求管理",
+      "description": "事务一致性保证：confirm 操作和需求树更新使用数据库事务，防止数据不一致",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "创建任务+更新计数在同一事务",
+        "自动创建 AR 时事务保护",
+        "失败时自动回滚",
+        "记录事务操作日志"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F024",
+      "category": "需求管理",
+      "description": "Serverless 会话持久化：将 AI 对话会话从内存 Map 迁移到数据库/Redis，支持 Railway 等 Serverless 环境",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "会话数据持久化到数据库",
+        "Serverless 冷启动后会话恢复",
+        "支持会话超时自动清理",
+        "多人同时对话互不干扰"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F025",
+      "category": "基础设施",
+      "description": "N+1 查询优化：批量查询替代循环查询，提升 API 响应速度",
+      "status": "pending",
+      "phase": 4,
+      "verification_steps": [
+        "getTeamProfiles 批量查询优化",
+        "树形 API 无 N+1 问题",
+        "API 响应时间 < 500ms",
+        "数据库查询次数最小化"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F026",
+      "category": "安全",
+      "description": "密码安全加固：将 SHA-256 改为 bcrypt，增加 salt 迭代，防止彩虹表攻击",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "bcrypt 集成到 auth/login API",
+        "现有密码需要重新哈希或迁移",
+        "登录验证通过 bcrypt.compare",
+        "密码哈希强度验证"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F027",
+      "category": "基础设施",
+      "description": "Turso Cloud 迁移：SQLite 本地文件改为 Turso Cloud，支持多实例并发访问",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "Turso Cloud 数据库创建并连接",
+        "删除 Cloudflare Workers 相关配置（wrangler.jsonc, open-next.config.ts）",
+        "Docker 部署验证",
+        "多实例并发访问测试"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F028",
+      "category": "基础设施",
+      "description": "LLMClient 公共封装：抽取 RequirementEngine 和 DialogueEngine 的公共代码，统一 AI 调用、重试、超时、错误处理",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "创建 src/lib/llm-client.ts",
+        "统一 OpenAI 客户端配置",
+        "添加指数退避重试机制",
+        "消除代码重复"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F029",
+      "category": "基础设施",
+      "description": "纯 DB 驱动会话管理：移除 In-Memory Session Map，AI 引擎改为无状态函数",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "移除 activeSessions Map",
+        "所有状态从 requirementConversations 表读写",
+        "AI 引擎请求级实例化",
+        "冷启动后会话恢复验证"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F030",
+      "category": "UX",
+      "description": "骨架屏 + 空状态优化：加载时显示骨架屏，空状态添加引导性插图和 CTA",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "需求页面骨架屏",
+        "任务列表骨架屏",
+        "空状态 SVG 插图",
+        "引导性按钮添加"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F031",
+      "category": "UX",
+      "description": "移动端适配：侧边栏改为 hamburger menu + drawer 滑出式，移动端布局优化",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "hamburger menu 图标显示",
+        "移动端侧边栏滑出式",
+        "响应式布局测试",
+        "触摸交互验证"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F032",
+      "category": "UX",
+      "description": "Toast 通知系统：成功/失败反馈通知，操作状态提示",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "Toast 组件实现",
+        "成功/失败/警告三种类型",
+        "API 操作后自动显示",
+        "自动消失动画"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F033",
+      "category": "UX",
+      "description": "面包屑导航：深层页面显示当前位置，支持快速跳转",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "需求详情页面包屑",
+        "显示 IR > FuR > AR 路径",
+        "点击可跳转",
+        "响应式隐藏/显示"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F034",
+      "category": "UX",
+      "description": "键盘快捷键：Command+K 命令面板，快速导航和操作",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "Command+K 打开命令面板",
+        "快捷键跳转各页面",
+        "任务状态快速更新",
+        "键盘导航支持"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F035",
+      "category": "测试",
+      "description": "Vitest 单元测试框架：添加 Vitest 依赖，编写业务逻辑单元测试",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "Vitest 配置完成",
+        "RequirementEngine 单元测试",
+        "数据库操作测试",
+        "覆盖率 > 60%"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F036",
+      "category": "测试",
+      "description": "API 集成测试：覆盖 /api/requirement 等核心接口，验证数据正确性",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "create_ir/reply/confirm API 测试",
+        "错误路径测试",
+        "Session 恢复测试",
+        "数据库一致性验证"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F037",
+      "category": "测试",
+      "description": "GitHub Actions CI/CD：提交自动运行测试，PR 检查通过才能合并",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        ".github/workflows/test.yml 创建",
+        "npm run build 检查",
+        "npm test 单元测试",
+        "npx playwright test E2E"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F038",
+      "category": "测试",
+      "description": "测试金字塔实现：单元 60-70%、集成 20-25%、E2E 10-15% 分层测试",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "测试分层目录结构",
+        "单元测试覆盖业务逻辑",
+        "集成测试覆盖 API",
+        "E2E 测试关键用户路径"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F039",
+      "category": "AI创新",
+      "description": "No-Standup Mode：AI 从 Git commits、PR review、IM 消息自动推断进展，省掉每日会议",
+      "status": "pending",
+      "phase": 5,
+      "verification_steps": [
+        "GitHub 账号集成",
+        "commit diff LLM 分析",
+        "IM 消息关键词提取",
+        "自动生成进展报告"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F040",
+      "category": "AI创新",
+      "description": "会议智能助手：实时记录会议内容，自动提取 action items 并分配 owner，会后自动通知",
+      "status": "pending",
+      "phase": 5,
+      "verification_steps": [
+        "会议录音转文字支持",
+        "LLM 提取讨论/决定/action",
+        "自动关联任务",
+        "deadline 前推送提醒"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F041",
+      "category": "AI创新",
+      "description": "新人 Onboarding Copilot：AI 分析代码库生成个性化学习路径，推荐需要了解的模块和负责人",
+      "status": "pending",
+      "phase": 5,
+      "verification_steps": [
+        "代码库静态分析",
+        "模块依赖图生成",
+        "人-知识领域映射",
+        "新人任务关联推荐"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F042",
+      "category": "AI创新",
+      "description": "沉默风险预警：通过协作模式异常发现风险，不依赖人主动报告",
+      "status": "pending",
+      "phase": 5,
+      "verification_steps": [
+        "团队行为基线建立",
+        "任务状态异常检测",
+        "协作模式异常识别",
+        "建议行动推送"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F043",
+      "category": "AI创新",
+      "description": "自动周报生成器：AI 汇总 Git commits、任务完成记录、IM 消息，自动生成结构化周报",
+      "status": "pending",
+      "phase": 5,
+      "verification_steps": [
+        "多数据源汇总",
+        "任务重要性分析",
+        "周报模板生成",
+        "一键确认发送"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F044",
+      "category": "AI创新",
+      "description": "知识地图：建立人-知识领域-问题类型映射，精准推荐知道答案的人",
+      "status": "pending",
+      "phase": 5,
+      "verification_steps": [
+        "Git history 人-模块映射",
+        "Issue/PR 人-问题映射",
+        "IM 人-知识领域关联",
+        "智能推荐接口人"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F045",
+      "category": "AI创新",
+      "description": "一键上线检查：根据代码改动动态生成检查清单，识别风险点",
+      "status": "pending",
+      "phase": 5,
+      "verification_steps": [
+        "PR 合并触发",
+        "LLM 分析改动内容",
+        "动态检查清单生成",
+        "逐项确认机制"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F046",
+      "category": "AI创新",
+      "description": "团队能量图：从行为信号（IM时间、commit频率、语气情绪）推断团队精力状态",
+      "status": "pending",
+      "phase": 5,
+      "verification_steps": [
+        "数据收集（经团队同意）",
+        "精力指数建模",
+        "过载预警提示",
+        "团队健康仪表盘"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F047",
+      "category": "基础设施",
+      "description": "数据库索引优化：为高频查询字段添加索引，提升查询性能",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "tasks.assigneeId 索引",
+        "tasks.status 索引",
+        "requirements.parentId 索引",
+        "查询性能验证"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F048",
+      "category": "安全",
+      "description": "Session Cookie 安全加固：添加 Secure、HttpOnly、SameSite、Max-Age 属性",
+      "status": "pending",
+      "phase": 3,
+      "verification_steps": [
+        "cookie 属性检查",
+        "生产环境 Secure flag",
+        "CSRF 防护",
+        "会话过期验证"
+      ],
+      "passes": false
+    }
+  ]
+}
