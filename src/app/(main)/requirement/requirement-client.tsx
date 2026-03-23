@@ -377,6 +377,27 @@ export function RequirementClient() {
   // Find selected node
   const selectedNode = requirements.find((r) => r.id === selectedId);
 
+  // Handle IR selection - enter chat mode if IR has conversationId
+  useEffect(() => {
+    if (selectedNode?.type === "ir" && selectedNode.conversationId) {
+      setCurrentIRId(selectedNode.id);
+      setCurrentSessionId(selectedNode.conversationId);
+      setMode("chat");
+      // Fetch existing conversation messages
+      fetch(`/api/conversations/${selectedNode.conversationId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.messages) {
+            setChatMessages(data.messages.map((m: ChatMessage) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content
+            })));
+          }
+        })
+        .catch(err => console.error("Failed to fetch conversation:", err));
+    }
+  }, [selectedNode]);
+
   // Get tasks for selected AR
   const selectedARTasks = selectedNode?.type === "ar"
     ? tasks.filter((t) => t.requirementId === selectedNode.id)
@@ -417,7 +438,9 @@ export function RequirementClient() {
         const data = await res.json();
         setCurrentIRId(data.id);
         setCurrentSessionId(data.sessionId);
+        setSelectedId(data.id);  // Select the new IR
         setMode("chat");
+        setChatMessages([]);  // Clear previous messages for new chat
         setExpandedIds((prev) => new Set([...prev, data.id]));
         fetchData();
       }
