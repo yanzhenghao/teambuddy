@@ -1,6 +1,5 @@
-import OpenAI from "openai";
+import { callLLM, stripTaggedContent } from "@/lib/llm-client";
 
-const MINIMAX_BASE_URL = "https://api.minimaxi.com/v1";
 const DEFAULT_MODEL = "MiniMax-M2.7-highspeed";
 
 const REQUIREMENT_SYSTEM_PROMPT = `你是 TeamBuddy，一个研发小组管家 Agent。你的任务是帮助管理者将模糊需求拆解为可执行的开发任务。
@@ -132,14 +131,9 @@ export function stripThinkTag(text: string): string {
 }
 
 export class RequirementEngine {
-  private client: OpenAI;
   private model: string;
 
   constructor(apiKey?: string, model?: string) {
-    this.client = new OpenAI({
-      apiKey: apiKey || process.env.MINIMAX_API_KEY,
-      baseURL: MINIMAX_BASE_URL,
-    });
     this.model = model || DEFAULT_MODEL;
   }
 
@@ -149,21 +143,19 @@ export class RequirementEngine {
   ): Promise<{ response: string; result: RequirementResult | null }> {
     const teamContext = buildTeamContext(teamMembers);
 
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      max_tokens: 1500,
-      messages: [
+    const text = await callLLM(
+      [
         { role: "system", content: REQUIREMENT_SYSTEM_PROMPT },
         {
           role: "user",
           content: `${teamContext}\n\n新需求：\n${requirement}\n\n请分析这个需求，如果信息不够请提出澄清问题，如果足够请直接给出任务拆解方案。`,
         },
       ],
-    });
+      { model: this.model, maxTokens: 1500 }
+    );
 
-    const text = response.choices[0]?.message?.content || "";
     const result = extractTasks(text);
-    const cleanResponse = stripThinkTag(stripTasksTag(text));
+    const cleanResponse = stripThinkTag(stripTaggedContent(text, "tasks"));
 
     return { response: cleanResponse, result };
   }
@@ -176,7 +168,7 @@ export class RequirementEngine {
   ): Promise<{ response: string; result: RequirementResult | null }> {
     const teamContext = buildTeamContext(teamMembers);
 
-    const messages: OpenAI.ChatCompletionMessageParam[] = [
+    const messages = [
       { role: "system", content: REQUIREMENT_SYSTEM_PROMPT },
       {
         role: "user",
@@ -190,15 +182,10 @@ export class RequirementEngine {
 
     messages.push({ role: "user", content: userReply });
 
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      max_tokens: 1500,
-      messages,
-    });
+    const text = await callLLM(messages, { model: this.model, maxTokens: 1500 });
 
-    const text = response.choices[0]?.message?.content || "";
     const result = extractTasks(text);
-    const cleanResponse = stripThinkTag(stripTasksTag(text));
+    const cleanResponse = stripThinkTag(stripTaggedContent(text, "tasks"));
 
     return { response: cleanResponse, result };
   }

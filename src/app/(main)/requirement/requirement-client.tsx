@@ -2,6 +2,136 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+// ========== Skeleton Components ==========
+function SkeletonLine({ width = "w-full", height = "h-4" }: { width?: string; height?: string }) {
+  return (
+    <div
+      className={`bg-gray-200 rounded animate-pulse ${width} ${height}`}
+    />
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="p-3 border-b border-gray-100">
+      <div className="flex items-center gap-2 mb-2">
+        <SkeletonLine width="w-6" height="h-6" />
+        <SkeletonLine width="w-24" height="h-4" />
+      </div>
+      <SkeletonLine width="w-3/4" height="h-3" />
+    </div>
+  );
+}
+
+function SkeletonTree() {
+  return (
+    <div className="p-2">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className={i > 1 ? "ml-4 mt-2" : ""}>
+          <SkeletonCard />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkeletonDetail() {
+  return (
+    <div className="p-6">
+      <SkeletonLine width="w-48" height="h-6" />
+      <div className="mt-4 space-y-3">
+        <SkeletonLine width="w-full" height="h-4" />
+        <SkeletonLine width="w-full" height="h-4" />
+        <SkeletonLine width="w-3/4" height="h-4" />
+      </div>
+      <div className="mt-6">
+        <SkeletonLine width="w-32" height="h-8" />
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+      <svg
+        className="w-24 h-24 text-gray-200 mb-4"
+        fill="none"
+        viewBox="0 0 100 100"
+      >
+        <rect x="10" y="20" width="80" height="60" rx="4" stroke="currentColor" strokeWidth="2" fill="none" />
+        <line x1="20" y1="35" x2="60" y2="35" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <line x1="20" y1="50" x2="80" y2="50" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <line x1="20" y1="65" x2="50" y2="65" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      <h3 className="text-lg font-medium text-gray-600 mb-1">{title}</h3>
+      <p className="text-sm text-gray-400 mb-4 max-w-xs">{description}</p>
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          className="bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-600 transition"
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ========== Breadcrumb Component ==========
+interface BreadcrumbItem {
+  id: string;
+  title: string;
+  type: RequirementType;
+}
+
+interface BreadcrumbProps {
+  items: BreadcrumbItem[];
+  onNavigate: (id: string) => void;
+}
+
+function Breadcrumb({ items, onNavigate }: BreadcrumbProps) {
+  if (items.length === 0) return null;
+
+  const typeLabels: Record<RequirementType, string> = {
+    ir: "IR",
+    fur: "FuR",
+    ar: "AR",
+  };
+
+  const typeColors: Record<RequirementType, string> = {
+    ir: "text-purple-600",
+    fur: "text-green-600",
+    ar: "text-blue-600",
+  };
+
+  return (
+    <nav className="flex items-center gap-1 text-sm mb-3">
+      {items.map((item, index) => (
+        <span key={item.id} className="flex items-center gap-1">
+          {index > 0 && <span className="text-gray-300 mx-1">›</span>}
+          <button
+            onClick={() => onNavigate(item.id)}
+            className={`hover:underline ${typeColors[item.type]}`}
+          >
+            {typeLabels[item.type]}: {item.title.length > 15 ? item.title.slice(0, 15) + "..." : item.title}
+          </button>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
 // ========== Types ==========
 type RequirementType = "ir" | "ar" | "fur";
 type RequirementStatus = "pending" | "in_progress" | "completed";
@@ -178,6 +308,11 @@ export function RequirementClient() {
   // Chat/Input mode
   const [mode, setMode] = useState<"list" | "chat" | "create">("list");
   const [newIRTitle, setNewIRTitle] = useState("");
+  const [editingRequirement, setEditingRequirement] = useState<Requirement | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingSummary, setEditingSummary] = useState("");
+  const [showAddAR, setShowAddAR] = useState(false);
+  const [newARTitle, setNewARTitle] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -351,10 +486,83 @@ export function RequirementClient() {
     }
   };
 
+  // Edit requirement
+  const handleEditRequirement = (req: Requirement) => {
+    setEditingRequirement(req);
+    setEditingTitle(req.title);
+    setEditingSummary(req.summary || "");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingRequirement) return;
+    try {
+      const res = await fetch("/api/requirement", {
+        method: "PATCH",
+        headers: { "Content-Type": "json" },
+        body: JSON.stringify({
+          id: editingRequirement.id,
+          title: editingTitle.trim(),
+          summary: editingSummary.trim(),
+        }),
+      });
+      if (res.ok) {
+        setEditingRequirement(null);
+        fetchData();
+      }
+    } catch (err) {
+      console.error("Failed to update requirement:", err);
+    }
+  };
+
+  // Add AR under FuR
+  const handleAddAR = async () => {
+    if (!newARTitle.trim() || !selectedNode || selectedNode.type !== "fur") return;
+    try {
+      const res = await fetch("/api/requirement", {
+        method: "POST",
+        headers: { "Content-Type": "json" },
+        body: JSON.stringify({
+          action: "create_ar",
+          parentId: selectedNode.id,
+          title: newARTitle.trim(),
+        }),
+      });
+      if (res.ok) {
+        setShowAddAR(false);
+        setNewARTitle("");
+        fetchData();
+      }
+    } catch (err) {
+      console.error("Failed to create AR:", err);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="p-6 flex items-center justify-center h-64">
-        <div className="text-gray-400">加载中...</div>
+      <div className="p-6 h-[calc(100vh-64px)] flex flex-col">
+        {/* Header Skeleton */}
+        <div className="flex justify-between items-center mb-4">
+          <SkeletonLine width="w-32" height="h-8" />
+          <SkeletonLine width="w-24" height="h-10" />
+        </div>
+        {/* Legend Skeleton */}
+        <div className="flex gap-4 mb-4">
+          <SkeletonLine width="w-24" height="h-4" />
+          <SkeletonLine width="w-24" height="h-4" />
+          <SkeletonLine width="w-24" height="h-4" />
+        </div>
+        {/* Main Content Skeleton */}
+        <div className="flex-1 flex gap-4 min-h-0">
+          <div className="w-80 bg-white rounded-xl border border-surface-200 flex flex-col overflow-hidden">
+            <div className="p-3 border-b border-surface-100 bg-surface-50">
+              <SkeletonLine width="w-20" height="h-4" />
+            </div>
+            <SkeletonTree />
+          </div>
+          <div className="flex-1 bg-white rounded-xl border border-surface-200 overflow-hidden">
+            <SkeletonDetail />
+          </div>
+        </div>
       </div>
     );
   }
@@ -399,9 +607,12 @@ export function RequirementClient() {
           </div>
           <div className="flex-1 overflow-y-auto p-2">
             {treeData.length === 0 ? (
-              <div className="text-center py-8 text-gray-400 text-sm">
-                暂无需求<br />点击&quot;新建 IR&quot;开始
-              </div>
+              <EmptyState
+                title="暂无需求"
+                description="点击下方按钮创建一个注入需求（IR），开启智能需求分析"
+                actionLabel="+ 新建 IR"
+                onAction={handleCreateIR}
+              />
             ) : (
               treeData.map((node) => (
                 <TreeNode
@@ -420,9 +631,10 @@ export function RequirementClient() {
         {/* Detail Panel */}
         <div className="flex-1 bg-white rounded-xl border border-surface-200 overflow-hidden flex flex-col">
           {!selectedNode ? (
-            <div className="flex-1 flex items-center justify-center text-gray-400">
-              选择左侧需求查看详情
-            </div>
+            <EmptyState
+              title="选择需求查看详情"
+              description="从左侧需求树选择一个需求，查看详细信息和任务分配情况"
+            />
           ) : mode === "chat" && selectedId === currentIRId ? (
             /* Chat Mode for current IR */
             <div className="flex flex-col h-full">
@@ -503,6 +715,25 @@ export function RequirementClient() {
             <div className="flex flex-col h-full overflow-y-auto">
               {/* Detail Header */}
               <div className="p-4 border-b border-surface-100">
+                {/* Breadcrumb */}
+                {(() => {
+                  // Build breadcrumb path
+                  const path: BreadcrumbItem[] = [selectedNode];
+                  let current = selectedNode;
+                  while (current.parentId) {
+                    const parent = requirements.find((r) => r.id === current.parentId);
+                    if (parent) {
+                      path.unshift(parent);
+                      current = parent;
+                    } else {
+                      break;
+                    }
+                  }
+                  if (path.length > 1) {
+                    return <Breadcrumb items={path} onNavigate={setSelectedId} />;
+                  }
+                  return null;
+                })()}
                 <div className="flex items-center gap-2 mb-2">
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${TYPE_LABELS[selectedNode.type].color}`}>
                     {TYPE_LABELS[selectedNode.type].label}
@@ -510,6 +741,12 @@ export function RequirementClient() {
                   <span className={`text-xs ${STATUS_LABELS[selectedNode.status].color}`}>
                     {STATUS_LABELS[selectedNode.status].label}
                   </span>
+                  <button
+                    onClick={() => handleEditRequirement(selectedNode)}
+                    className="ml-auto px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition"
+                  >
+                    编辑
+                  </button>
                 </div>
                 <h2 className="text-lg font-semibold text-gray-900">{selectedNode.title}</h2>
                 {selectedNode.summary && (
@@ -614,9 +851,17 @@ export function RequirementClient() {
                 return (
                   <div className="p-4 space-y-4">
                     <div>
-                      <h3 className="text-sm font-medium text-gray-700 mb-2">
-                        分配需求 (AR) - {childARs.length}
-                      </h3>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-medium text-gray-700">
+                          分配需求 (AR) - {childARs.length}
+                        </h3>
+                        <button
+                          onClick={() => setShowAddAR(true)}
+                          className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                        >
+                          + 添加 AR
+                        </button>
+                      </div>
                       {childARs.length === 0 ? (
                         <div className="text-sm text-gray-400 bg-surface-50 rounded-lg p-4 text-center">
                           暂无 AR，使用确认功能分配任务
@@ -684,6 +929,96 @@ export function RequirementClient() {
                 className="bg-brand-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-600 disabled:opacity-50 transition"
               >
                 开始分析
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Requirement Modal */}
+      {editingRequirement && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+            <h2 className="text-lg font-semibold mb-4">
+              编辑 {TYPE_LABELS[editingRequirement.type].label}
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  标题
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-surface-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200"
+                  value={editingTitle}
+                  onChange={(e) => setEditingTitle(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  备注
+                </label>
+                <textarea
+                  className="w-full border border-surface-200 rounded-lg px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-200"
+                  rows={3}
+                  placeholder="添加备注..."
+                  value={editingSummary}
+                  onChange={(e) => setEditingSummary(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setEditingRequirement(null)}
+                className="px-4 py-2.5 text-sm text-gray-500 hover:text-gray-700 transition"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={!editingTitle.trim()}
+                className="bg-brand-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-600 disabled:opacity-50 transition"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add AR Modal */}
+      {showAddAR && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+            <h2 className="text-lg font-semibold mb-4">添加 AR - 分配需求</h2>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                AR 标题
+              </label>
+              <input
+                type="text"
+                className="w-full border border-surface-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200"
+                placeholder="输入 AR 标题..."
+                value={newARTitle}
+                onChange={(e) => setNewARTitle(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && handleAddAR()}
+              />
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => { setShowAddAR(false); setNewARTitle(""); }}
+                className="px-4 py-2.5 text-sm text-gray-500 hover:text-gray-700 transition"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleAddAR}
+                disabled={!newARTitle.trim()}
+                className="bg-blue-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 transition"
+              >
+                添加
               </button>
             </div>
           </div>

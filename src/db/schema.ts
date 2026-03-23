@@ -1,4 +1,22 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+
+// ========== 版本/迭代表 ==========
+export const versions = sqliteTable("versions", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(), // e.g., "v1.0", "Sprint 1"
+  status: text("status").notNull().default("planning"), // "planning" | "active" | "completed"
+  startDate: text("start_date"), // YYYY-MM-DD
+  endDate: text("end_date"), // YYYY-MM-DD
+  description: text("description"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+}, (table) => ({
+  statusIdx: index("versions_status_idx").on(table.status),
+}));
 
 // ========== 成员表 ==========
 export const members = sqliteTable("members", {
@@ -11,7 +29,9 @@ export const members = sqliteTable("members", {
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
-});
+}, (table) => ({
+  statusIdx: index("members_status_idx").on(table.status),
+}));
 
 // ========== 任务表 ==========
 export const tasks = sqliteTable("tasks", {
@@ -36,7 +56,11 @@ export const tasks = sqliteTable("tasks", {
   updatedAt: text("updated_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
-});
+}, (table) => ({
+  assigneeIdx: index("tasks_assignee_idx").on(table.assigneeId),
+  statusIdx: index("tasks_status_idx").on(table.status),
+  requirementIdx: index("tasks_requirement_idx").on(table.requirementId),
+}));
 
 // ========== 每日更新表 ==========
 export const dailyUpdates = sqliteTable("daily_updates", {
@@ -94,6 +118,7 @@ export const requirements = sqliteTable("requirements", {
   title: text("title").notNull(), // requirement title
   type: text("type").notNull(), // "ir" | "fur" | "ar"
   assigneeId: text("assignee_id"), // for AR: allocated to which member
+  versionId: text("version_id").references(() => versions.id), // links to version
   status: text("status").notNull().default("pending"), // "pending" | "in_progress" | "completed"
   summary: text("summary"), // AI analysis summary
   conversationId: text("conversation_id"), // links to requirementConversations
@@ -105,7 +130,50 @@ export const requirements = sqliteTable("requirements", {
   updatedAt: text("updated_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
-});
+}, (table) => ({
+  parentIdx: index("requirements_parent_idx").on(table.parentId),
+  assigneeIdx: index("requirements_assignee_idx").on(table.assigneeId),
+  statusIdx: index("requirements_status_idx").on(table.status),
+  versionIdx: index("requirements_version_idx").on(table.versionId),
+}));
+
+// ========== 需求变更历史表 ==========
+export const requirementHistory = sqliteTable("requirement_history", {
+  id: text("id").primaryKey(),
+  requirementId: text("requirement_id")
+    .notNull()
+    .references(() => requirements.id),
+  title: text("title").notNull(), // title at time of change
+  summary: text("summary"), // summary at time of change
+  status: text("status").notNull(), // status at time of change
+  assigneeId: text("assignee_id"), // assignee at time of change
+  versionId: text("version_id"), // version at time of change
+  changeType: text("change_type").notNull(), // "create" | "update" | "delete"
+  changedBy: text("changed_by"), // user id who made the change
+  changedAt: text("changed_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+}, (table) => ({
+  requirementIdx: index("requirement_history_req_idx").on(table.requirementId),
+  changedAtIdx: index("requirement_history_changed_at_idx").on(table.changedAt),
+}));
+
+// ========== 需求依赖关系表 ==========
+export const requirementDependencies = sqliteTable("requirement_dependencies", {
+  id: text("id").primaryKey(),
+  requirementId: text("requirement_id")
+    .notNull()
+    .references(() => requirements.id), // the requirement that depends on another
+  dependsOnId: text("depends_on_id")
+    .notNull()
+    .references(() => requirements.id), // the requirement it depends on
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+}, (table) => ({
+  requirementIdx: index("req_deps_req_idx").on(table.requirementId),
+  dependsOnIdx: index("req_deps_on_idx").on(table.dependsOnId),
+}));
 
 // ========== 需求分析对话表 ==========
 export const requirementConversations = sqliteTable("requirement_conversations", {
@@ -121,7 +189,31 @@ export const requirementConversations = sqliteTable("requirement_conversations",
   updatedAt: text("updated_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
-});
+}, (table) => ({
+  statusIdx: index("requirement_conversations_status_idx").on(table.status),
+}));
+
+// ========== 风险预警表 ==========
+export const riskWarnings = sqliteTable("risk_warnings", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(), // "overdue" | "stale" | "overload" | "blocked"
+  severity: text("severity").notNull().default("medium"), // "low" | "medium" | "high" | "critical"
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  requirementId: text("requirement_id").references(() => requirements.id), // linked AR if applicable
+  taskId: text("task_id").references(() => tasks.id), // linked task if applicable
+  memberId: text("member_id").references(() => members.id), // affected member
+  status: text("status").notNull().default("active"), // "active" | "acknowledged" | "resolved"
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  acknowledgedAt: text("acknowledged_at"),
+  resolvedAt: text("resolved_at"),
+}, (table) => ({
+  statusIdx: index("risk_warnings_status_idx").on(table.status),
+  memberIdx: index("risk_warnings_member_idx").on(table.memberId),
+  requirementIdx: index("risk_warnings_req_idx").on(table.requirementId),
+}));
 
 // ========== Session 表 ==========
 export const sessions = sqliteTable("sessions", {
@@ -131,4 +223,6 @@ export const sessions = sqliteTable("sessions", {
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
-});
+}, (table) => ({
+  userIdx: index("sessions_user_idx").on(table.userId),
+}));

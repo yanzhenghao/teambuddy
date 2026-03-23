@@ -29,24 +29,27 @@ test.describe('需求管理页面', () => {
   })
 
   test('新建 IR 按钮可用', async ({ page }) => {
-    const createButton = page.locator('button:has-text("新建 IR")')
+    // Use first() since EmptyState may also render a "新建 IR" button
+    const createButton = page.locator('button:has-text("新建 IR")').first()
     await expect(createButton).toBeVisible()
   })
 
   test('可以打开新建 IR 弹窗', async ({ page }) => {
-    await page.locator('button:has-text("新建 IR")').click()
+    // Click header button (first one)
+    await page.locator('button:has-text("新建 IR")').first().click()
     await expect(page.locator('textarea')).toBeVisible()
     await expect(page.locator('text=开始分析')).toBeVisible()
   })
 
   test('关闭弹窗后返回列表', async ({ page }) => {
-    await page.locator('button:has-text("新建 IR")').click()
+    await page.locator('button:has-text("新建 IR")').first().click()
     await page.locator('text=取消').click()
-    await expect(page.locator('text=选择左侧需求查看详情')).toBeVisible()
+    await expect(page.locator('text=选择需求查看详情')).toBeVisible()
   })
 
   test('需求树面板存在', async ({ page }) => {
-    await expect(page.locator('text=需求树')).toBeVisible()
+    // Use more specific selector to avoid matching EmptyState text
+    await expect(page.locator('h2:has-text("需求树")')).toBeVisible()
   })
 
   test('图例显示正确', async ({ page }) => {

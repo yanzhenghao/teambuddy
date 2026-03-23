@@ -5,38 +5,45 @@ import {
   RequirementResult,
 } from "@/services/requirement-engine";
 import { db } from "@/db";
-import { members, tasks, requirementConversations, requirements } from "@/db/schema";
+import { members, tasks, requirementConversations, requirements, requirementHistory } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-
-// Session state - persisted in DB for serverless compatibility
-// In-memory cache for active sessions
-interface SessionCache {
-  engine: RequirementEngine;
-  history: ConversationMessage[];
-  requirement: string;
-  teamMembers: TeamMemberProfile[];
-  dbId: string;
-  irId: string | null;
-}
-const activeSessions = new Map<string, SessionCache>();
+import { getCurrentUser } from "@/lib/auth";
 
 async function getTeamProfiles(): Promise<TeamMemberProfile[]> {
+  // Batch query: get all active members and all their tasks in 2 queries
   const allMembers = await db
     .select()
     .from(members)
     .where(eq(members.status, "active"))
     .all();
 
+  if (allMembers.length === 0) {
+    return [];
+  }
+
+  // Get all member IDs
+  const memberIds = allMembers.map((m) => m.id);
+
+  // Batch query: get all tasks for all members at once
+  const allTasks = await db.select().from(tasks).all();
+
+  // Group tasks by assigneeId in memory
+  const tasksByMember = new Map<string, typeof allTasks>();
+  for (const task of allTasks) {
+    if (task.assigneeId) {
+      if (!tasksByMember.has(task.assigneeId)) {
+        tasksByMember.set(task.assigneeId, []);
+      }
+      tasksByMember.get(task.assigneeId)!.push(task);
+    }
+  }
+
   const profiles: TeamMemberProfile[] = [];
   for (const m of allMembers) {
-    const allMemberTasks = await db
-      .select()
-      .from(tasks)
-      .where(eq(tasks.assigneeId, m.id))
-      .all();
-    const currentLoad = allMemberTasks
+    const memberTasks = tasksByMember.get(m.id) || [];
+    const currentLoad = memberTasks
       .filter((t) => t.status === "in_progress" || t.status === "in_review")
       .length;
 
@@ -54,7 +61,12 @@ async function getTeamProfiles(): Promise<TeamMemberProfile[]> {
 }
 
 /** GET /api/requirement — List all requirement conversations (legacy) */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const user = await getCurrentUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const all = await db
     .select()
     .from(requirementConversations)
@@ -76,8 +88,13 @@ export async function GET() {
 
 /** POST /api/requirement — Actions: create_ir, reply, confirm */
 export async function POST(request: NextRequest) {
+  const user = await getCurrentUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json();
-  const { action, sessionId, requirement, message, tasks: confirmedTasks, irId, title } = body;
+  const { action, sessionId, requirement, message, tasks: confirmedTasks, irId, title, versionId } = body;
 
   // ---- CREATE_IR: Create new Injected Requirement ----
   if (action === "create_ir") {
@@ -100,6 +117,20 @@ export async function POST(request: NextRequest) {
       conversationId,
       taskCount: 0,
       completedTaskCount: 0,
+      versionId: versionId || null,
+    }).run();
+
+    // Record creation history
+    await db.insert(requirementHistory).values({
+      id: randomUUID(),
+      requirementId: irIdValue,
+      title: title.trim(),
+      summary: null,
+      status: "pending",
+      assigneeId: null,
+      versionId: versionId || null,
+      changeType: "create",
+      changedBy: user.userId,
     }).run();
 
     // Create conversation record
@@ -112,19 +143,10 @@ export async function POST(request: NextRequest) {
       status: "active",
     }).run();
 
-    // Initialize session
+    // Initialize engine and start analysis (stateless, request-level)
     const teamMembers = await getTeamProfiles();
     const engine = new RequirementEngine();
     const { response } = await engine.startAnalysis(title.trim(), teamMembers);
-
-    activeSessions.set(sessionIdValue, {
-      engine,
-      history: [{ role: "assistant", content: response }],
-      requirement: title.trim(),
-      teamMembers,
-      dbId: conversationId,
-      irId: irIdValue,
-    });
 
     // Update conversation with first message
     await db
@@ -152,61 +174,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let session = activeSessions.get(sessionId);
+    // Load conversation from DB (pure DB-driven, no in-memory cache)
+    const conversation = await db
+      .select()
+      .from(requirementConversations)
+      .where(eq(requirementConversations.sessionId, sessionId))
+      .get();
 
-    // BE-1 Fix: If session not in memory, try to load from DB (serverless cold start)
-    if (!session) {
-      const conversation = await db
-        .select()
-        .from(requirementConversations)
-        .where(eq(requirementConversations.sessionId, sessionId))
-        .get();
-
-      if (!conversation || conversation.status !== "active") {
-        return NextResponse.json(
-          { error: "Session not found or expired. Start a new analysis." },
-          { status: 400 }
-        );
-      }
-
-      // Find the IR for this conversation
-      const ir = await db
-        .select()
-        .from(requirements)
-        .where(eq(requirements.conversationId, conversation.id))
-        .get();
-
-      // Reconstruct session from DB
-      const teamMembers = await getTeamProfiles();
-      const engine = new RequirementEngine();
-      const history: ConversationMessage[] = JSON.parse(conversation.messages || "[]");
-
-      session = {
-        engine,
-        history,
-        requirement: conversation.requirement,
-        teamMembers,
-        dbId: conversation.id,
-        irId: ir?.id || null,
-      };
-      activeSessions.set(sessionId, session);
+    if (!conversation || conversation.status !== "active") {
+      return NextResponse.json(
+        { error: "Session not found or expired. Start a new analysis." },
+        { status: 400 }
+      );
     }
 
-    const { response, result } = await session.engine.continueAnalysis(
-      session.requirement,
-      session.teamMembers,
-      session.history,
+    // Find the IR for this conversation
+    const ir = await db
+      .select()
+      .from(requirements)
+      .where(eq(requirements.conversationId, conversation.id))
+      .get();
+
+    // Load history from DB
+    const history: ConversationMessage[] = JSON.parse(conversation.messages || "[]");
+    const teamMembers = await getTeamProfiles();
+    const engine = new RequirementEngine();
+
+    // Continue analysis (engine is stateless, all state passed as params)
+    const { response, result } = await engine.continueAnalysis(
+      conversation.requirement,
+      teamMembers,
+      history,
       message
     );
 
-    session.history.push({ role: "user", content: message });
-    session.history.push({ role: "assistant", content: response });
+    // Update history
+    history.push({ role: "user", content: message });
+    history.push({ role: "assistant", content: response });
 
     // Update conversation in DB
     await db
       .update(requirementConversations)
       .set({
-        messages: JSON.stringify(session.history),
+        messages: JSON.stringify(history),
         updatedAt: new Date().toISOString(),
       })
       .where(eq(requirementConversations.sessionId, sessionId))
@@ -219,12 +229,12 @@ export async function POST(request: NextRequest) {
       furId = randomUUID();
       await db.insert(requirements).values({
         id: furId,
-        parentId: session.irId,
+        parentId: ir?.id || null,
         title: result.summary.slice(0, 100),
         type: "fur",
         status: "in_progress",
         summary: result.summary,
-        conversationId: session.dbId,
+        conversationId: conversation.id,
         taskCount: result.tasks.length,
         completedTaskCount: 0,
       }).run();
@@ -235,20 +245,18 @@ export async function POST(request: NextRequest) {
         .set({
           status: "completed",
           result: JSON.stringify(result),
-          messages: JSON.stringify(session.history),
+          messages: JSON.stringify(history),
           updatedAt: new Date().toISOString(),
         })
         .where(eq(requirementConversations.sessionId, sessionId))
         .run();
-
-      activeSessions.delete(sessionId);
     }
 
     return NextResponse.json({
       sessionId,
       message: response,
       result,
-      furId, // BE-6 Fix: consistent field name
+      furId,
       done: !!result,
     });
   }
@@ -270,31 +278,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find the FuR under this IR
+    // Pre-fetch FuR (outside transaction - read only)
     let furRecord = await db
       .select()
       .from(requirements)
       .where(eq(requirements.parentId, irId))
       .get();
 
-    // Create FuR if not exists (e.g., manually added without conversation)
-    if (!furRecord || furRecord.type !== "fur") {
-      const furId = randomUUID();
-      await db.insert(requirements).values({
-        id: furId,
-        parentId: irId,
-        title: "功能需求",
-        type: "fur",
-        status: "in_progress",
-        summary: null,
-        taskCount: 0,
-        completedTaskCount: 0,
-      }).run();
-      furRecord = await db.select().from(requirements).where(eq(requirements.id, furId)).get();
-    }
-
-    if (!furRecord) {
-      return NextResponse.json({ error: "Failed to create FuR" }, { status: 500 });
+    // Pre-fetch assignee names (outside transaction - read only)
+    const assigneeIds = [...new Set(confirmedTasks.map((t) => t.suggestedAssignee?.memberId).filter(Boolean))];
+    const assigneeMap = new Map<string, string>();
+    if (assigneeIds.length > 0) {
+      const assigneeRecords = await db.select().from(members).all();
+      for (const m of assigneeRecords) {
+        if (assigneeIds.includes(m.id)) {
+          assigneeMap.set(m.id, m.name);
+        }
+      }
     }
 
     // Group tasks by suggested assignee to create AR per person
@@ -308,34 +308,56 @@ export async function POST(request: NextRequest) {
     }
 
     const arIds: string[] = [];
+    const totalTasks = confirmedTasks.length;
 
-    // Create AR per assignee and link tasks to AR
-    for (const [assigneeId, assigneeTasks] of tasksByAssignee) {
-      const arId = randomUUID();
-      const assigneeName = assigneeId === "unassigned"
-        ? "未分配"
-        : (await db.select().from(members).where(eq(members.id, assigneeId)).get())?.name || "未知";
+    // Execute all writes inside a transaction
+    await db.transaction(async (tx) => {
+      // Create FuR if not exists
+      if (!furRecord || furRecord.type !== "fur") {
+        const furId = randomUUID();
+        await tx.insert(requirements).values({
+          id: furId,
+          parentId: irId,
+          title: "功能需求",
+          type: "fur",
+          status: "in_progress",
+          summary: null,
+          taskCount: 0,
+          completedTaskCount: 0,
+        });
+        furRecord = await tx.select().from(requirements).where(eq(requirements.id, furId)).get();
+      }
 
-      await db.insert(requirements).values({
-        id: arId,
-        parentId: furRecord.id,
-        title: `[AR] ${assigneeName}`,
-        type: "ar",
-        status: "in_progress",
-        summary: `分配给 ${assigneeName} 的任务`,
-        assigneeId: assigneeId === "unassigned" ? null : assigneeId,
-        taskCount: assigneeTasks.length,
-        completedTaskCount: 0,
-      }).run();
-      arIds.push(arId);
+      if (!furRecord) {
+        throw new Error("Failed to create FuR");
+      }
 
-      // Create tasks linked to AR
-      for (const t of assigneeTasks) {
-        const taskId = `t${Date.now()}-${randomUUID().slice(0, 4)}`;
-        const taskAssigneeId = t.suggestedAssignee?.memberId || null;
+      // Create AR per assignee and link tasks to AR
+      for (const [assigneeId, assigneeTasks] of tasksByAssignee) {
+        const arId = randomUUID();
+        const assigneeName = assigneeId === "unassigned"
+          ? "未分配"
+          : assigneeMap.get(assigneeId) || "未知";
 
-        await db.insert(tasks)
-          .values({
+        await tx.insert(requirements).values({
+          id: arId,
+          parentId: furRecord.id,
+          title: `[AR] ${assigneeName}`,
+          type: "ar",
+          status: "in_progress",
+          summary: `分配给 ${assigneeName} 的任务`,
+          assigneeId: assigneeId === "unassigned" ? null : assigneeId,
+          taskCount: assigneeTasks.length,
+          completedTaskCount: 0,
+        });
+        arIds.push(arId);
+
+        // Create tasks linked to AR
+        for (const t of assigneeTasks) {
+          const taskId = `t${Date.now()}-${randomUUID().slice(0, 4)}`;
+          const taskAssigneeId = t.suggestedAssignee?.memberId || null;
+
+          await tx.insert(tasks).values({
             id: taskId,
             title: t.title,
             description: t.description,
@@ -346,25 +368,30 @@ export async function POST(request: NextRequest) {
             estimatedDays: t.estimatedDays || null,
             createdFrom: "requirement_analysis",
             requirementId: arId,
-          })
-          .run();
+          });
+        }
       }
-    }
 
-    // Update FuR task count
-    const totalTasks = confirmedTasks.length;
-    await db
-      .update(requirements)
-      .set({
-        taskCount: totalTasks,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(requirements.id, furRecord.id))
-      .run();
+      // Update FuR task count
+      await tx
+        .update(requirements)
+        .set({
+          taskCount: totalTasks,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(requirements.id, furRecord.id));
+    });
+
+    // Re-fetch to ensure we have the final state
+    const finalFur = await db
+      .select()
+      .from(requirements)
+      .where(eq(requirements.id, furRecord!.id))
+      .get();
 
     return NextResponse.json({
       created: totalTasks,
-      furId: furRecord.id,
+      furId: finalFur?.id || furRecord!.id,
       arIds,
     });
   }
@@ -372,10 +399,15 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 }
 
-/** PATCH /api/requirement — Edit requirement (title, summary, status) */
+/** PATCH /api/requirement — Edit requirement (title, summary, status, versionId) */
 export async function PATCH(request: NextRequest) {
+  const user = await getCurrentUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json();
-  const { id, title, summary, status } = body;
+  const { id, title, summary, status, versionId } = body;
 
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -391,10 +423,24 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Requirement not found" }, { status: 404 });
   }
 
+  // Record history before making changes
+  await db.insert(requirementHistory).values({
+    id: randomUUID(),
+    requirementId: existing.id,
+    title: existing.title,
+    summary: existing.summary,
+    status: existing.status,
+    assigneeId: existing.assigneeId,
+    versionId: existing.versionId,
+    changeType: "update",
+    changedBy: user.userId,
+  }).run();
+
   const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   if (title !== undefined) updates.title = title.trim();
   if (summary !== undefined) updates.summary = summary;
   if (status !== undefined) updates.status = status;
+  if (versionId !== undefined) updates.versionId = versionId;
 
   await db
     .update(requirements)
@@ -413,8 +459,13 @@ export async function PATCH(request: NextRequest) {
 
 /** POST /api/requirement — Additional actions: create_fur, create_ar */
 export async function PUT(request: NextRequest) {
+  const user = await getCurrentUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json();
-  const { action, parentId, title, type, summary } = body;
+  const { action, parentId, title, type, summary, versionId } = body;
 
   // ---- CREATE_FUR: Freely insert FuR under any requirement (or root) ----
   if (action === "create_fur") {
@@ -432,6 +483,20 @@ export async function PUT(request: NextRequest) {
       summary: summary || null,
       taskCount: 0,
       completedTaskCount: 0,
+      versionId: versionId || null,
+    }).run();
+
+    // Record creation history
+    await db.insert(requirementHistory).values({
+      id: randomUUID(),
+      requirementId: furId,
+      title: title.trim(),
+      summary: summary || null,
+      status: "pending",
+      assigneeId: null,
+      versionId: versionId || null,
+      changeType: "create",
+      changedBy: user.userId,
     }).run();
 
     return NextResponse.json({ id: furId, parentId: parentId || null, type: "fur" });
@@ -456,6 +521,20 @@ export async function PUT(request: NextRequest) {
       assigneeId: assigneeId || null,
       taskCount: 0,
       completedTaskCount: 0,
+      versionId: versionId || null,
+    }).run();
+
+    // Record creation history
+    await db.insert(requirementHistory).values({
+      id: randomUUID(),
+      requirementId: arId,
+      title: title.trim(),
+      summary: summary || null,
+      status: "pending",
+      assigneeId: assigneeId || null,
+      versionId: versionId || null,
+      changeType: "create",
+      changedBy: user.userId,
     }).run();
 
     return NextResponse.json({ id: arId, parentId: parentId || null, type: "ar", assigneeId });

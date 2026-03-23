@@ -1,12 +1,36 @@
 import { db } from "@/db";
 import { requirements, tasks } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const user = await getCurrentUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const versionId = searchParams.get("versionId");
+  const showUnversioned = searchParams.get("showUnversioned") === "true";
+
   try {
-    // Fetch all requirements
-    const allRequirements = await db.select().from(requirements).all();
+    // Fetch requirements, optionally filtered by version
+    let allRequirements;
+    if (versionId) {
+      allRequirements = await db
+        .select()
+        .from(requirements)
+        .where(eq(requirements.versionId, versionId))
+        .all();
+    } else if (showUnversioned) {
+      allRequirements = await db
+        .select()
+        .from(requirements)
+        .all();
+    } else {
+      allRequirements = await db.select().from(requirements).all();
+    }
 
     // Get task counts for all requirements
     const allTasks = await db.select().from(tasks).all();

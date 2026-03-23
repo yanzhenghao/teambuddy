@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TeamBuddy - 研发小组管家</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc', 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 800: '#3730a3', 900: '#312e81' },
+            surface: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    .tab-active { border-bottom: 2px solid #6366f1; color: #6366f1; font-weight: 600; }
+    .kanban-col { min-height: 400px; }
+    .task-card { transition: all 0.2s; cursor: grab; }
+    .task-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
+    .gantt-bar { border-radius: 4px; height: 28px; position: relative; transition: width 0.3s; }
+    .gantt-bar-inner { height: 100%; border-radius: 4px; }
+    .risk-pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: white; }
+    .chat-bubble { max-width: 75%; }
+    .stat-card { transition: all 0.2s; }
+    .stat-card:hover { transform: translateY(-2px); }
+    .sidebar-item { transition: all 0.15s; }
+    .sidebar-item:hover { background: #e0e7ff; }
+    .sidebar-item.active { background: #e0e7ff; color: #4f46e5; font-weight: 600; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-surface-50 text-gray-800">
+
+<!-- Layout -->
+<div class="flex h-screen overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside class="w-60 bg-white border-r border-surface-200 flex flex-col">
+    <div class="p-5 border-b border-surface-200">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-brand-500 rounded-lg flex items-center justify-center">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </div>
+        <div>
+          <div class="font-bold text-sm">TeamBuddy</div>
+          <div class="text-xs text-gray-400">研发小组管家</div>
+        </div>
+      </div>
+    </div>
+    <nav class="flex-1 p-3 space-y-1">
+      <a href="#" onclick="showTab('dashboard')" class="sidebar-item active flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" id="nav-dashboard">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+        总览
+      </a>
+      <a href="#" onclick="showTab('kanban')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" id="nav-kanban">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
+        看板
+      </a>
+      <a href="#" onclick="showTab('gantt')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" id="nav-gantt">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        甘特图
+      </a>
+      <a href="#" onclick="showTab('report')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" id="nav-report">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        日报
+      </a>
+      <a href="#" onclick="showTab('requirement')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" id="nav-requirement">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+        需求
+      </a>
+      <a href="#" onclick="showTab('standup')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" id="nav-standup">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+        Standup
+      </a>
+    </nav>
+    <div class="p-3 border-t border-surface-200">
+      <div class="flex items-center gap-3 px-3 py-2">
+        <div class="avatar bg-brand-500">A</div>
+        <div>
+          <div class="text-sm font-medium">Anthony</div>
+          <div class="text-xs text-gray-400">管理者</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto">
+
+    <!-- ==================== DASHBOARD ==================== -->
+    <div id="tab-dashboard" class="p-6 space-y-6">
+      <div class="flex justify-between items-center">
+        <div>
+          <h1 class="text-2xl font-bold">总览</h1>
+          <p class="text-sm text-gray-400 mt-1">2026年3月13日 周五</p>
+        </div>
+        <button class="bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-600 transition">
+          触发今日 Standup
+        </button>
+      </div>
+
+      <!-- Stats -->
+      <div class="grid grid-cols-4 gap-4">
+        <div class="stat-card bg-white rounded-xl p-5 border border-surface-200">
+          <div class="flex justify-between items-start">
+            <div>
+              <div class="text-sm text-gray-400">总任务</div>
+              <div class="text-3xl font-bold mt-1">12</div>
+            </div>
+            <div class="w-10 h-10 bg-brand-50 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            </div>
+          </div>
+          <div class="mt-3 flex items-center gap-1 text-xs text-green-600">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+            +2 本周新增
+          </div>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-5 border border-surface-200">
+          <div class="flex justify-between items-start">
+            <div>
+              <div class="text-sm text-gray-400">进行中</div>
+              <div class="text-3xl font-bold mt-1 text-blue-600">5</div>
+            </div>
+            <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+          </div>
+          <div class="mt-3 text-xs text-gray-400">3 人正在推进</div>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-5 border border-surface-200">
+          <div class="flex justify-between items-start">
+            <div>
+              <div class="text-sm text-gray-400">已完成</div>
+              <div class="text-3xl font-bold mt-1 text-green-600">6</div>
+            </div>
+            <div class="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+          </div>
+          <div class="mt-3 flex items-center gap-1 text-xs text-green-600">
+            完成率 50%
+          </div>
+        </div>
+        <div class="stat-card bg-white rounded-xl p-5 border border-surface-200">
+          <div class="flex justify-between items-start">
+            <div>
+              <div class="text-sm text-gray-400">风险项</div>
+              <div class="text-3xl font-bold mt-1 text-red-500">1</div>
+            </div>
+            <div class="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center risk-pulse">
+              <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </div>
+          </div>
+          <div class="mt-3 text-xs text-red-500">1 项超期</div>
+        </div>
+      </div>
+
+      <!-- Two columns -->
+      <div class="grid grid-cols-3 gap-6">
+        <!-- Team Status -->
+        <div class="col-span-2 bg-white rounded-xl border border-surface-200 p-5">
+          <h3 class="font-semibold mb-4">团队状态</h3>
+          <div class="space-y-4">
+            <div class="flex items-center gap-4 p-3 bg-surface-50 rounded-lg">
+              <div class="avatar bg-blue-500">李</div>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="text-sm font-medium">李明</span>
+                  <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">正常</span>
+                </div>
+                <div class="text-xs text-gray-400 mt-0.5">前端开发 &middot; 负载 2/3</div>
+                <div class="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                  <div class="bg-blue-500 h-1.5 rounded-full" style="width: 67%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 p-3 bg-surface-50 rounded-lg">
+              <div class="avatar bg-purple-500">王</div>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="text-sm font-medium">王芳</span>
+                  <span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">有阻塞</span>
+                </div>
+                <div class="text-xs text-gray-400 mt-0.5">后端开发 &middot; 负载 3/3</div>
+                <div class="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                  <div class="bg-yellow-500 h-1.5 rounded-full" style="width: 100%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 p-3 bg-surface-50 rounded-lg">
+              <div class="avatar bg-emerald-500">张</div>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="text-sm font-medium">张伟</span>
+                  <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">正常</span>
+                </div>
+                <div class="text-xs text-gray-400 mt-0.5">全栈开发 &middot; 负载 2/3</div>
+                <div class="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                  <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 67%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 p-3 bg-surface-50 rounded-lg">
+              <div class="avatar bg-orange-500">陈</div>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="text-sm font-medium">陈静</span>
+                  <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">正常</span>
+                </div>
+                <div class="text-xs text-gray-400 mt-0.5">测试工程师 &middot; 负载 1/3</div>
+                <div class="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                  <div class="bg-orange-400 h-1.5 rounded-full" style="width: 33%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Risk Alerts -->
+        <div class="bg-white rounded-xl border border-surface-200 p-5">
+          <h3 class="font-semibold mb-4">风险预警</h3>
+          <div class="space-y-3">
+            <div class="p-3 bg-red-50 border border-red-100 rounded-lg">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 bg-red-500 rounded-full risk-pulse"></div>
+                <span class="text-xs font-medium text-red-700">超期</span>
+              </div>
+              <p class="text-sm mt-1 text-red-800">支付接口对接</p>
+              <p class="text-xs text-red-500 mt-0.5">超期 2 天 &middot; 王芳</p>
+            </div>
+            <div class="p-3 bg-yellow-50 border border-yellow-100 rounded-lg">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <span class="text-xs font-medium text-yellow-700">阻塞</span>
+              </div>
+              <p class="text-sm mt-1 text-yellow-800">第三方 API 文档缺失</p>
+              <p class="text-xs text-yellow-600 mt-0.5">等待外部回复 &middot; 王芳</p>
+            </div>
+            <div class="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span class="text-xs font-medium text-blue-700">提醒</span>
+              </div>
+              <p class="text-sm mt-1 text-blue-800">数据库迁移</p>
+              <p class="text-xs text-blue-500 mt-0.5">临近截止日 &middot; 还剩 1 天</p>
+            </div>
+          </div>
+          <!-- Chart -->
+          <div class="mt-5">
+            <h4 class="text-xs font-medium text-gray-400 mb-3">本周完成趋势</h4>
+            <canvas id="weeklyChart" height="120"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== KANBAN ==================== -->
+    <div id="tab-kanban" class="p-6 space-y-6 hidden">
+      <div class="flex justify-between items-center">
+        <h1 class="text-2xl font-bold">看板</h1>
+        <div class="flex items-center gap-3">
+          <select class="text-sm border border-surface-200 rounded-lg px-3 py-2 bg-white">
+            <option>全部成员</option>
+            <option>李明</option>
+            <option>王芳</option>
+            <option>张伟</option>
+            <option>陈静</option>
+          </select>
+          <button class="bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-600 transition">
+            + 新建任务
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-4 gap-5">
+        <!-- Backlog -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <div class="w-2.5 h-2.5 bg-gray-400 rounded-full"></div>
+            <span class="text-sm font-semibold text-gray-600">待分配</span>
+            <span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full ml-1">1</span>
+          </div>
+          <div class="kanban-col space-y-3">
+            <div class="task-card bg-white rounded-xl p-4 border border-surface-200">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">新需求</span>
+                <span class="text-xs text-gray-400">P2</span>
+              </div>
+              <p class="text-sm font-medium mt-2">用户头像上传功能</p>
+              <p class="text-xs text-gray-400 mt-1">包含裁剪、压缩、OSS 上传</p>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-gray-400">预估 3 天</span>
+                <span class="text-xs text-gray-300">待分配</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Todo -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <div class="w-2.5 h-2.5 bg-blue-400 rounded-full"></div>
+            <span class="text-sm font-semibold text-gray-600">待开始</span>
+            <span class="text-xs bg-blue-100 text-blue-500 px-1.5 py-0.5 rounded-full ml-1">2</span>
+          </div>
+          <div class="kanban-col space-y-3">
+            <div class="task-card bg-white rounded-xl p-4 border border-surface-200">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">功能</span>
+                <span class="text-xs text-gray-400">P1</span>
+              </div>
+              <p class="text-sm font-medium mt-2">消息推送服务搭建</p>
+              <p class="text-xs text-gray-400 mt-1">WebSocket + 消息队列</p>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-gray-400">预估 5 天</span>
+                <div class="avatar bg-emerald-500" style="width:24px;height:24px;font-size:10px">张</div>
+              </div>
+            </div>
+            <div class="task-card bg-white rounded-xl p-4 border border-surface-200">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full">测试</span>
+                <span class="text-xs text-gray-400">P2</span>
+              </div>
+              <p class="text-sm font-medium mt-2">E2E 测试用例编写</p>
+              <p class="text-xs text-gray-400 mt-1">登录、注册、个人中心流程</p>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-gray-400">预估 3 天</span>
+                <div class="avatar bg-orange-500" style="width:24px;height:24px;font-size:10px">陈</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- In Progress -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <div class="w-2.5 h-2.5 bg-amber-400 rounded-full"></div>
+            <span class="text-sm font-semibold text-gray-600">进行中</span>
+            <span class="text-xs bg-amber-100 text-amber-500 px-1.5 py-0.5 rounded-full ml-1">5</span>
+          </div>
+          <div class="kanban-col space-y-3">
+            <div class="task-card bg-white rounded-xl p-4 border border-surface-200">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">功能</span>
+                <span class="text-xs text-red-500 font-medium">P0</span>
+              </div>
+              <p class="text-sm font-medium mt-2">用户认证模块</p>
+              <p class="text-xs text-gray-400 mt-1">JWT + OAuth2.0 登录</p>
+              <div class="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                <div class="bg-amber-400 h-1.5 rounded-full" style="width: 70%"></div>
+              </div>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-gray-400">进度 70%</span>
+                <div class="avatar bg-blue-500" style="width:24px;height:24px;font-size:10px">李</div>
+              </div>
+            </div>
+            <div class="task-card bg-white rounded-xl p-4 border border-red-200 border-l-4 border-l-red-400">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">功能</span>
+                <span class="text-xs text-red-500 font-medium risk-pulse">超期!</span>
+              </div>
+              <p class="text-sm font-medium mt-2">支付接口对接</p>
+              <p class="text-xs text-gray-400 mt-1">等待第三方 API 文档</p>
+              <div class="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                <div class="bg-red-400 h-1.5 rounded-full" style="width: 40%"></div>
+              </div>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-red-500">超期 2 天</span>
+                <div class="avatar bg-purple-500" style="width:24px;height:24px;font-size:10px">王</div>
+              </div>
+            </div>
+            <div class="task-card bg-white rounded-xl p-4 border border-surface-200">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">优化</span>
+                <span class="text-xs text-gray-400">P1</span>
+              </div>
+              <p class="text-sm font-medium mt-2">数据库查询优化</p>
+              <p class="text-xs text-gray-400 mt-1">慢查询分析 + 索引优化</p>
+              <div class="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                <div class="bg-amber-400 h-1.5 rounded-full" style="width: 55%"></div>
+              </div>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-gray-400">进度 55%</span>
+                <div class="avatar bg-purple-500" style="width:24px;height:24px;font-size:10px">王</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Done -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <div class="w-2.5 h-2.5 bg-green-400 rounded-full"></div>
+            <span class="text-sm font-semibold text-gray-600">已完成</span>
+            <span class="text-xs bg-green-100 text-green-500 px-1.5 py-0.5 rounded-full ml-1">6</span>
+          </div>
+          <div class="kanban-col space-y-3">
+            <div class="task-card bg-white rounded-xl p-4 border border-surface-200 opacity-75">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full">完成</span>
+              </div>
+              <p class="text-sm font-medium mt-2 line-through text-gray-400">项目脚手架搭建</p>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-green-500">3月8日完成</span>
+                <div class="avatar bg-emerald-500" style="width:24px;height:24px;font-size:10px">张</div>
+              </div>
+            </div>
+            <div class="task-card bg-white rounded-xl p-4 border border-surface-200 opacity-75">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full">完成</span>
+              </div>
+              <p class="text-sm font-medium mt-2 line-through text-gray-400">数据库 Schema 设计</p>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-green-500">3月10日完成</span>
+                <div class="avatar bg-purple-500" style="width:24px;height:24px;font-size:10px">王</div>
+              </div>
+            </div>
+            <div class="task-card bg-white rounded-xl p-4 border border-surface-200 opacity-75">
+              <div class="flex justify-between items-start">
+                <span class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full">完成</span>
+              </div>
+              <p class="text-sm font-medium mt-2 line-through text-gray-400">首页 UI 开发</p>
+              <div class="flex justify-between items-center mt-3 pt-3 border-t border-surface-100">
+                <span class="text-xs text-green-500">3月11日完成</span>
+                <div class="avatar bg-blue-500" style="width:24px;height:24px;font-size:10px">李</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== GANTT ==================== -->
+    <div id="tab-gantt" class="p-6 space-y-6 hidden">
+      <div class="flex justify-between items-center">
+        <h1 class="text-2xl font-bold">甘特图</h1>
+        <div class="flex items-center gap-3">
+          <select class="text-sm border border-surface-200 rounded-lg px-3 py-2 bg-white">
+            <option>全部成员</option>
+            <option>李明</option>
+            <option>王芳</option>
+            <option>张伟</option>
+            <option>陈静</option>
+          </select>
+          <div class="flex bg-white border border-surface-200 rounded-lg overflow-hidden">
+            <button class="px-3 py-1.5 text-xs font-medium bg-brand-50 text-brand-600">周</button>
+            <button class="px-3 py-1.5 text-xs font-medium text-gray-500">月</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-surface-200 overflow-hidden">
+        <!-- Timeline Header -->
+        <div class="flex border-b border-surface-200">
+          <div class="w-56 shrink-0 p-3 bg-surface-50 border-r border-surface-200">
+            <span class="text-xs font-semibold text-gray-400 uppercase">任务</span>
+          </div>
+          <div class="flex-1 flex">
+            <div class="flex-1 p-2 text-center border-r border-surface-100">
+              <div class="text-xs text-gray-400">3月7日</div>
+              <div class="text-[10px] text-gray-300">周六</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100">
+              <div class="text-xs text-gray-400">3月8日</div>
+              <div class="text-[10px] text-gray-300">周日</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100">
+              <div class="text-xs text-gray-400">3月9日</div>
+              <div class="text-[10px] text-gray-300">周一</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100">
+              <div class="text-xs text-gray-400">3月10日</div>
+              <div class="text-[10px] text-gray-300">周二</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100">
+              <div class="text-xs text-gray-400">3月11日</div>
+              <div class="text-[10px] text-gray-300">周三</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100 bg-brand-50">
+              <div class="text-xs text-brand-600 font-medium">3月12日</div>
+              <div class="text-[10px] text-brand-400">周四</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100 bg-brand-50">
+              <div class="text-xs text-brand-600 font-medium">今天</div>
+              <div class="text-[10px] text-brand-400">3月13日</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100">
+              <div class="text-xs text-gray-400">3月14日</div>
+              <div class="text-[10px] text-gray-300">周六</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100">
+              <div class="text-xs text-gray-400">3月15日</div>
+              <div class="text-[10px] text-gray-300">周日</div>
+            </div>
+            <div class="flex-1 p-2 text-center border-r border-surface-100">
+              <div class="text-xs text-gray-400">3月16日</div>
+              <div class="text-[10px] text-gray-300">周一</div>
+            </div>
+            <div class="flex-1 p-2 text-center">
+              <div class="text-xs text-gray-400">3月17日</div>
+              <div class="text-[10px] text-gray-300">周二</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gantt Rows -->
+        <!-- Row 1 - Completed -->
+        <div class="flex border-b border-surface-100 hover:bg-surface-50">
+          <div class="w-56 shrink-0 p-3 border-r border-surface-200 flex items-center gap-2">
+            <div class="avatar bg-emerald-500" style="width:24px;height:24px;font-size:10px">张</div>
+            <div>
+              <div class="text-sm">项目脚手架</div>
+              <div class="text-[10px] text-gray-400">张伟</div>
+            </div>
+          </div>
+          <div class="flex-1 flex items-center px-1 relative">
+            <div class="absolute" style="left: 0%; width: 27.3%; padding: 0 4px;">
+              <div class="gantt-bar bg-green-100">
+                <div class="gantt-bar-inner bg-green-400 flex items-center px-2" style="width: 100%">
+                  <span class="text-[10px] text-white font-medium truncate">已完成</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2 - Completed -->
+        <div class="flex border-b border-surface-100 hover:bg-surface-50">
+          <div class="w-56 shrink-0 p-3 border-r border-surface-200 flex items-center gap-2">
+            <div class="avatar bg-purple-500" style="width:24px;height:24px;font-size:10px">王</div>
+            <div>
+              <div class="text-sm">数据库 Schema</div>
+              <div class="text-[10px] text-gray-400">王芳</div>
+            </div>
+          </div>
+          <div class="flex-1 flex items-center px-1 relative">
+            <div class="absolute" style="left: 9.1%; width: 36.4%; padding: 0 4px;">
+              <div class="gantt-bar bg-green-100">
+                <div class="gantt-bar-inner bg-green-400 flex items-center px-2" style="width: 100%">
+                  <span class="text-[10px] text-white font-medium truncate">已完成</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3 - In Progress -->
+        <div class="flex border-b border-surface-100 hover:bg-surface-50">
+          <div class="w-56 shrink-0 p-3 border-r border-surface-200 flex items-center gap-2">
+            <div class="avatar bg-blue-500" style="width:24px;height:24px;font-size:10px">李</div>
+            <div>
+              <div class="text-sm">用户认证模块</div>
+              <div class="text-[10px] text-gray-400">李明</div>
+            </div>
+          </div>
+          <div class="flex-1 flex items-center px-1 relative">
+            <div class="absolute" style="left: 27.3%; width: 54.5%; padding: 0 4px;">
+              <div class="gantt-bar bg-blue-100">
+                <div class="gantt-bar-inner bg-blue-400 flex items-center px-2" style="width: 70%">
+                  <span class="text-[10px] text-white font-medium truncate">70%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4 - Overdue! -->
+        <div class="flex border-b border-surface-100 hover:bg-red-50">
+          <div class="w-56 shrink-0 p-3 border-r border-surface-200 flex items-center gap-2">
+            <div class="avatar bg-purple-500" style="width:24px;height:24px;font-size:10px">王</div>
+            <div>
+              <div class="text-sm text-red-600">支付接口对接</div>
+              <div class="text-[10px] text-red-400">王芳 &middot; 超期!</div>
+            </div>
+          </div>
+          <div class="flex-1 flex items-center px-1 relative">
+            <div class="absolute" style="left: 18.2%; width: 54.5%; padding: 0 4px;">
+              <div class="gantt-bar bg-red-100 border border-red-200">
+                <div class="gantt-bar-inner bg-red-400 flex items-center px-2" style="width: 40%">
+                  <span class="text-[10px] text-white font-medium truncate">40%</span>
+                </div>
+              </div>
+            </div>
+            <!-- Deadline marker -->
+            <div class="absolute" style="left: 45.5%; top: 0; bottom: 0; border-left: 2px dashed #ef4444;"></div>
+          </div>
+        </div>
+
+        <!-- Row 5 - In Progress -->
+        <div class="flex border-b border-surface-100 hover:bg-surface-50">
+          <div class="w-56 shrink-0 p-3 border-r border-surface-200 flex items-center gap-2">
+            <div class="avatar bg-purple-500" style="width:24px;height:24px;font-size:10px">王</div>
+            <div>
+              <div class="text-sm">数据库查询优化</div>
+              <div class="text-[10px] text-gray-400">王芳</div>
+            </div>
+          </div>
+          <div class="flex-1 flex items-center px-1 relative">
+            <div class="absolute" style="left: 36.4%; width: 45.5%; padding: 0 4px;">
+              <div class="gantt-bar bg-amber-100">
+                <div class="gantt-bar-inner bg-amber-400 flex items-center px-2" style="width: 55%">
+                  <span class="text-[10px] text-white font-medium truncate">55%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 6 - Not Started -->
+        <div class="flex border-b border-surface-100 hover:bg-surface-50">
+          <div class="w-56 shrink-0 p-3 border-r border-surface-200 flex items-center gap-2">
+            <div class="avatar bg-emerald-500" style="width:24px;height:24px;font-size:10px">张</div>
+            <div>
+              <div class="text-sm">消息推送服务</div>
+              <div class="text-[10px] text-gray-400">张伟</div>
+            </div>
+          </div>
+          <div class="flex-1 flex items-center px-1 relative">
+            <div class="absolute" style="left: 63.6%; width: 36.4%; padding: 0 4px;">
+              <div class="gantt-bar bg-gray-100 border border-gray-200 border-dashed">
+                <div class="gantt-bar-inner flex items-center px-2">
+                  <span class="text-[10px] text-gray-400 font-medium truncate">待开始</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Today line -->
+        <!-- The today indicator is implied by the column highlighting -->
+      </div>
+
+      <!-- Legend -->
+      <div class="flex items-center gap-6 text-xs text-gray-400">
+        <div class="flex items-center gap-1.5"><div class="w-3 h-2 bg-green-400 rounded-sm"></div> 已完成</div>
+        <div class="flex items-center gap-1.5"><div class="w-3 h-2 bg-blue-400 rounded-sm"></div> 进行中</div>
+        <div class="flex items-center gap-1.5"><div class="w-3 h-2 bg-amber-400 rounded-sm"></div> 进行中 (注意)</div>
+        <div class="flex items-center gap-1.5"><div class="w-3 h-2 bg-red-400 rounded-sm"></div> 超期</div>
+        <div class="flex items-center gap-1.5"><div class="w-3 h-2 bg-gray-200 rounded-sm border border-dashed border-gray-300"></div> 待开始</div>
+        <div class="flex items-center gap-1.5"><div class="w-0.5 h-3 border-l-2 border-dashed border-red-400"></div> 截止日</div>
+      </div>
+    </div>
+
+    <!-- ==================== DAILY REPORT ==================== -->
+    <div id="tab-report" class="p-6 space-y-6 hidden">
+      <div class="flex justify-between items-center">
+        <h1 class="text-2xl font-bold">团队日报</h1>
+        <div class="flex items-center gap-3">
+          <button class="px-3 py-1.5 text-sm border border-surface-200 rounded-lg bg-white hover:bg-surface-50">&larr; 前一天</button>
+          <span class="text-sm font-medium px-3">2026年3月13日</span>
+          <button class="px-3 py-1.5 text-sm border border-surface-200 rounded-lg bg-white text-gray-300 cursor-not-allowed">后一天 &rarr;</button>
+        </div>
+      </div>
+
+      <!-- Report Card -->
+      <div class="bg-white rounded-xl border border-surface-200 overflow-hidden">
+        <!-- Header Stats -->
+        <div class="grid grid-cols-4 border-b border-surface-200">
+          <div class="p-4 text-center border-r border-surface-200">
+            <div class="text-2xl font-bold text-green-600">3</div>
+            <div class="text-xs text-gray-400 mt-1">今日完成</div>
+          </div>
+          <div class="p-4 text-center border-r border-surface-200">
+            <div class="text-2xl font-bold text-blue-600">5</div>
+            <div class="text-xs text-gray-400 mt-1">进行中</div>
+          </div>
+          <div class="p-4 text-center border-r border-surface-200">
+            <div class="text-2xl font-bold text-yellow-600">1</div>
+            <div class="text-xs text-gray-400 mt-1">有阻塞</div>
+          </div>
+          <div class="p-4 text-center">
+            <div class="text-2xl font-bold text-red-500">1</div>
+            <div class="text-xs text-gray-400 mt-1">超期</div>
+          </div>
+        </div>
+
+        <!-- Member Reports -->
+        <div class="divide-y divide-surface-100">
+          <!-- 李明 -->
+          <div class="p-5">
+            <div class="flex items-center gap-3 mb-3">
+              <div class="avatar bg-blue-500">李</div>
+              <div>
+                <span class="text-sm font-semibold">李明</span>
+                <span class="text-xs text-gray-400 ml-2">前端开发</span>
+              </div>
+              <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">正常</span>
+            </div>
+            <div class="ml-11 space-y-2">
+              <div>
+                <div class="text-xs font-medium text-gray-400 mb-1">昨日完成</div>
+                <ul class="text-sm space-y-1">
+                  <li class="flex items-center gap-2"><span class="text-green-500">&#10003;</span> 完成登录页面 UI 适配</li>
+                  <li class="flex items-center gap-2"><span class="text-green-500">&#10003;</span> OAuth2.0 回调处理</li>
+                </ul>
+              </div>
+              <div>
+                <div class="text-xs font-medium text-gray-400 mb-1">今日计划</div>
+                <ul class="text-sm space-y-1">
+                  <li class="flex items-center gap-2"><span class="text-blue-400">&#9675;</span> Token 刷新逻辑</li>
+                  <li class="flex items-center gap-2"><span class="text-blue-400">&#9675;</span> 用户信息存储方案</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- 王芳 -->
+          <div class="p-5">
+            <div class="flex items-center gap-3 mb-3">
+              <div class="avatar bg-purple-500">王</div>
+              <div>
+                <span class="text-sm font-semibold">王芳</span>
+                <span class="text-xs text-gray-400 ml-2">后端开发</span>
+              </div>
+              <span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full ml-auto">有阻塞</span>
+            </div>
+            <div class="ml-11 space-y-2">
+              <div>
+                <div class="text-xs font-medium text-gray-400 mb-1">昨日完成</div>
+                <ul class="text-sm space-y-1">
+                  <li class="flex items-center gap-2"><span class="text-green-500">&#10003;</span> 慢查询日志分析完成</li>
+                </ul>
+              </div>
+              <div>
+                <div class="text-xs font-medium text-gray-400 mb-1">今日计划</div>
+                <ul class="text-sm space-y-1">
+                  <li class="flex items-center gap-2"><span class="text-blue-400">&#9675;</span> 继续等待第三方支付 API 文档</li>
+                  <li class="flex items-center gap-2"><span class="text-blue-400">&#9675;</span> 先推进索引优化</li>
+                </ul>
+              </div>
+              <div class="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg">
+                <div class="text-xs font-medium text-red-600 flex items-center gap-1">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01"/></svg>
+                  阻塞项
+                </div>
+                <p class="text-xs text-red-700 mt-1">第三方支付平台尚未提供沙箱环境和 API 文档，已催促对方但未回复。</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 张伟 -->
+          <div class="p-5">
+            <div class="flex items-center gap-3 mb-3">
+              <div class="avatar bg-emerald-500">张</div>
+              <div>
+                <span class="text-sm font-semibold">张伟</span>
+                <span class="text-xs text-gray-400 ml-2">全栈开发</span>
+              </div>
+              <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">正常</span>
+            </div>
+            <div class="ml-11 space-y-2">
+              <div>
+                <div class="text-xs font-medium text-gray-400 mb-1">昨日完成</div>
+                <ul class="text-sm space-y-1">
+                  <li class="flex items-center gap-2"><span class="text-green-500">&#10003;</span> 首页 UI 开发并提交 PR</li>
+                </ul>
+              </div>
+              <div>
+                <div class="text-xs font-medium text-gray-400 mb-1">今日计划</div>
+                <ul class="text-sm space-y-1">
+                  <li class="flex items-center gap-2"><span class="text-blue-400">&#9675;</span> 数据库迁移脚本编写</li>
+                  <li class="flex items-center gap-2"><span class="text-blue-400">&#9675;</span> 开始消息推送服务调研</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- 陈静 -->
+          <div class="p-5">
+            <div class="flex items-center gap-3 mb-3">
+              <div class="avatar bg-orange-500">陈</div>
+              <div>
+                <span class="text-sm font-semibold">陈静</span>
+                <span class="text-xs text-gray-400 ml-2">测试工程师</span>
+              </div>
+              <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">正常</span>
+            </div>
+            <div class="ml-11 space-y-2">
+              <div>
+                <div class="text-xs font-medium text-gray-400 mb-1">昨日完成</div>
+                <ul class="text-sm space-y-1">
+                  <li class="flex items-center gap-2"><span class="text-green-500">&#10003;</span> 测试环境搭建</li>
+                  <li class="flex items-center gap-2"><span class="text-green-500">&#10003;</span> 登录模块单元测试用例设计</li>
+                </ul>
+              </div>
+              <div>
+                <div class="text-xs font-medium text-gray-400 mb-1">今日计划</div>
+                <ul class="text-sm space-y-1">
+                  <li class="flex items-center gap-2"><span class="text-blue-400">&#9675;</span> 编写 API 接口自动化测试</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== REQUIREMENT INPUT ==================== -->
+    <div id="tab-requirement" class="p-6 space-y-6 hidden">
+      <div class="flex justify-between items-center">
+        <h1 class="text-2xl font-bold">需求管理</h1>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6">
+        <!-- Input Panel -->
+        <div class="space-y-4">
+          <div class="bg-white rounded-xl border border-surface-200 p-5">
+            <h3 class="font-semibold mb-3">输入需求</h3>
+            <textarea class="w-full border border-surface-200 rounded-lg p-3 text-sm h-32 resize-none focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-400" placeholder="描述你的需求，Agent 会帮你澄清并拆解...&#10;&#10;例如：给用户中心加一个头像上传功能">给用户中心加一个头像上传功能</textarea>
+            <button class="mt-3 bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-600 transition w-full">
+              提交给 Agent 分析
+            </button>
+          </div>
+
+          <!-- Agent Clarification -->
+          <div class="bg-white rounded-xl border border-brand-200 p-5">
+            <div class="flex items-center gap-2 mb-3">
+              <div class="w-6 h-6 bg-brand-500 rounded-full flex items-center justify-center">
+                <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+              </div>
+              <span class="text-sm font-semibold text-brand-700">Agent 澄清</span>
+            </div>
+            <p class="text-sm text-gray-600 mb-3">我理解了这个需求。为了准确拆解，需要确认几个问题：</p>
+            <div class="space-y-3">
+              <div class="p-3 bg-surface-50 rounded-lg">
+                <p class="text-sm font-medium">1. 支持哪些图片格式？</p>
+                <div class="flex gap-2 mt-2">
+                  <label class="flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border border-surface-200 cursor-pointer hover:border-brand-300">
+                    <input type="checkbox" checked class="rounded text-brand-500"> JPG/PNG
+                  </label>
+                  <label class="flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border border-surface-200 cursor-pointer hover:border-brand-300">
+                    <input type="checkbox" checked class="rounded text-brand-500"> WebP
+                  </label>
+                  <label class="flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border border-surface-200 cursor-pointer hover:border-brand-300">
+                    <input type="checkbox" class="rounded text-brand-500"> GIF
+                  </label>
+                </div>
+              </div>
+              <div class="p-3 bg-surface-50 rounded-lg">
+                <p class="text-sm font-medium">2. 需要客户端裁剪功能吗？</p>
+                <div class="flex gap-2 mt-2">
+                  <button class="text-xs bg-brand-50 text-brand-600 border border-brand-200 px-3 py-1 rounded-full font-medium">需要</button>
+                  <button class="text-xs bg-white text-gray-500 border border-surface-200 px-3 py-1 rounded-full">不需要</button>
+                </div>
+              </div>
+              <div class="p-3 bg-surface-50 rounded-lg">
+                <p class="text-sm font-medium">3. 存储方案？</p>
+                <div class="flex gap-2 mt-2">
+                  <button class="text-xs bg-brand-50 text-brand-600 border border-brand-200 px-3 py-1 rounded-full font-medium">OSS 对象存储</button>
+                  <button class="text-xs bg-white text-gray-500 border border-surface-200 px-3 py-1 rounded-full">本地文件系统</button>
+                </div>
+              </div>
+              <div class="p-3 bg-surface-50 rounded-lg">
+                <p class="text-sm font-medium">4. 需要头像审核机制吗？</p>
+                <div class="flex gap-2 mt-2">
+                  <button class="text-xs bg-white text-gray-500 border border-surface-200 px-3 py-1 rounded-full">需要</button>
+                  <button class="text-xs bg-brand-50 text-brand-600 border border-brand-200 px-3 py-1 rounded-full font-medium">暂不需要</button>
+                </div>
+              </div>
+            </div>
+            <button class="mt-4 bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-600 transition w-full">
+              确认，开始拆解
+            </button>
+          </div>
+        </div>
+
+        <!-- Task Breakdown Result -->
+        <div class="space-y-4">
+          <div class="bg-white rounded-xl border border-surface-200 p-5">
+            <h3 class="font-semibold mb-4">任务拆解结果</h3>
+            <div class="space-y-3">
+              <div class="p-4 border border-surface-200 rounded-lg hover:border-brand-200 transition">
+                <div class="flex justify-between items-start">
+                  <div>
+                    <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">前端</span>
+                    <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full ml-1">P1</span>
+                  </div>
+                  <span class="text-xs text-gray-400">预估 2 天</span>
+                </div>
+                <p class="text-sm font-medium mt-2">头像上传组件（含裁剪）</p>
+                <p class="text-xs text-gray-400 mt-1">实现图片选择、裁剪预览、压缩上传 UI 组件</p>
+                <div class="flex items-center justify-between mt-3 pt-3 border-t border-surface-100">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-400">建议分配:</span>
+                    <div class="flex items-center gap-1">
+                      <div class="avatar bg-blue-500" style="width:20px;height:20px;font-size:9px">李</div>
+                      <span class="text-xs font-medium">李明</span>
+                    </div>
+                  </div>
+                  <span class="text-[10px] text-gray-300">前端 &middot; 负载 2/3</span>
+                </div>
+              </div>
+
+              <div class="p-4 border border-surface-200 rounded-lg hover:border-brand-200 transition">
+                <div class="flex justify-between items-start">
+                  <div>
+                    <span class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">后端</span>
+                    <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full ml-1">P1</span>
+                  </div>
+                  <span class="text-xs text-gray-400">预估 2 天</span>
+                </div>
+                <p class="text-sm font-medium mt-2">上传接口 + OSS 集成</p>
+                <p class="text-xs text-gray-400 mt-1">REST API：签名上传、文件校验、OSS SDK 对接</p>
+                <div class="flex items-center justify-between mt-3 pt-3 border-t border-surface-100">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-400">建议分配:</span>
+                    <div class="flex items-center gap-1">
+                      <div class="avatar bg-emerald-500" style="width:20px;height:20px;font-size:9px">张</div>
+                      <span class="text-xs font-medium">张伟</span>
+                    </div>
+                  </div>
+                  <span class="text-[10px] text-gray-300">全栈 &middot; 负载 2/3</span>
+                </div>
+              </div>
+
+              <div class="p-4 border border-surface-200 rounded-lg hover:border-brand-200 transition">
+                <div class="flex justify-between items-start">
+                  <div>
+                    <span class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full">测试</span>
+                    <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full ml-1">P2</span>
+                  </div>
+                  <span class="text-xs text-gray-400">预估 1 天</span>
+                </div>
+                <p class="text-sm font-medium mt-2">头像上传 E2E 测试</p>
+                <p class="text-xs text-gray-400 mt-1">上传流程、格式校验、大小限制、错误处理测试</p>
+                <div class="flex items-center justify-between mt-3 pt-3 border-t border-surface-100">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-400">建议分配:</span>
+                    <div class="flex items-center gap-1">
+                      <div class="avatar bg-orange-500" style="width:20px;height:20px;font-size:9px">陈</div>
+                      <span class="text-xs font-medium">陈静</span>
+                    </div>
+                  </div>
+                  <span class="text-[10px] text-gray-300">测试 &middot; 负载 1/3</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 flex gap-3">
+              <button class="flex-1 bg-brand-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-600 transition">
+                确认分配
+              </button>
+              <button class="px-4 py-2.5 border border-surface-200 rounded-lg text-sm font-medium text-gray-500 hover:bg-surface-50 transition">
+                调整
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== STANDUP CHAT ==================== -->
+    <div id="tab-standup" class="p-6 hidden">
+      <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Standup 对话</h1>
+        <select class="text-sm border border-surface-200 rounded-lg px-3 py-2 bg-white">
+          <option>李明 - 今天 10:02</option>
+          <option>王芳 - 今天 10:15</option>
+          <option>张伟 - 今天 10:08</option>
+          <option>陈静 - 今天 10:22</option>
+        </select>
+      </div>
+
+      <div class="max-w-3xl mx-auto">
+        <div class="bg-white rounded-xl border border-surface-200 overflow-hidden">
+          <!-- Chat Header -->
+          <div class="p-4 border-b border-surface-200 flex items-center gap-3">
+            <div class="avatar bg-blue-500">李</div>
+            <div>
+              <div class="font-medium text-sm">与 李明 的 Standup 对话</div>
+              <div class="text-xs text-gray-400">2026年3月13日 10:02 - 10:05</div>
+            </div>
+            <div class="ml-auto">
+              <span class="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">已完成</span>
+            </div>
+          </div>
+
+          <!-- Messages -->
+          <div class="p-5 space-y-4 max-h-[500px] overflow-y-auto">
+            <!-- Agent -->
+            <div class="flex gap-3">
+              <div class="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+              </div>
+              <div class="chat-bubble bg-surface-50 rounded-2xl rounded-tl-md px-4 py-3">
+                <p class="text-sm">Hi 李明，早上好！昨天你提到在做 OAuth2.0 的回调处理，进展怎么样了？</p>
+              </div>
+            </div>
+
+            <!-- User -->
+            <div class="flex gap-3 justify-end">
+              <div class="chat-bubble bg-brand-500 text-white rounded-2xl rounded-tr-md px-4 py-3">
+                <p class="text-sm">搞定了！回调和 token 交换都跑通了。今天准备做 token 刷新的逻辑。</p>
+              </div>
+              <div class="avatar bg-blue-500 shrink-0" style="width:32px;height:32px;font-size:12px">李</div>
+            </div>
+
+            <!-- Agent -->
+            <div class="flex gap-3">
+              <div class="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+              </div>
+              <div class="chat-bubble bg-surface-50 rounded-2xl rounded-tl-md px-4 py-3">
+                <p class="text-sm">不错！Token 刷新打算用什么方案？Silent refresh 还是 Refresh token rotation？</p>
+              </div>
+            </div>
+
+            <!-- User -->
+            <div class="flex gap-3 justify-end">
+              <div class="chat-bubble bg-brand-500 text-white rounded-2xl rounded-tr-md px-4 py-3">
+                <p class="text-sm">用 refresh token rotation，安全性更好。预计今天能写完，明天可以开始做用户信息的本地存储。</p>
+              </div>
+              <div class="avatar bg-blue-500 shrink-0" style="width:32px;height:32px;font-size:12px">李</div>
+            </div>
+
+            <!-- Agent -->
+            <div class="flex gap-3">
+              <div class="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+              </div>
+              <div class="chat-bubble bg-surface-50 rounded-2xl rounded-tl-md px-4 py-3">
+                <p class="text-sm">好的，有什么阻塞或者需要帮助的地方吗？</p>
+              </div>
+            </div>
+
+            <!-- User -->
+            <div class="flex gap-3 justify-end">
+              <div class="chat-bubble bg-brand-500 text-white rounded-2xl rounded-tr-md px-4 py-3">
+                <p class="text-sm">目前没有，挺顺利的 👍</p>
+              </div>
+              <div class="avatar bg-blue-500 shrink-0" style="width:32px;height:32px;font-size:12px">李</div>
+            </div>
+
+            <!-- Agent Summary -->
+            <div class="flex gap-3">
+              <div class="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+              </div>
+              <div class="chat-bubble bg-surface-50 rounded-2xl rounded-tl-md px-4 py-3">
+                <p class="text-sm">收到，辛苦了！今天加油 💪</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Extracted Info -->
+          <div class="border-t border-surface-200 p-4 bg-surface-50">
+            <div class="text-xs font-medium text-gray-400 mb-2">Agent 提取的结构化信息</div>
+            <div class="grid grid-cols-3 gap-3">
+              <div class="bg-white p-2.5 rounded-lg border border-surface-200">
+                <div class="text-[10px] text-gray-400 mb-1">昨日完成</div>
+                <div class="text-xs">OAuth2.0 回调处理 + token 交换</div>
+              </div>
+              <div class="bg-white p-2.5 rounded-lg border border-surface-200">
+                <div class="text-[10px] text-gray-400 mb-1">今日计划</div>
+                <div class="text-xs">Refresh token rotation 实现</div>
+              </div>
+              <div class="bg-white p-2.5 rounded-lg border border-surface-200">
+                <div class="text-[10px] text-gray-400 mb-1">阻塞项</div>
+                <div class="text-xs text-green-600">无</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  // Tab switching
+  function showTab(name) {
+    document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    document.getElementById('nav-' + name).classList.add('active');
+  }
+
+  // Weekly completion trend chart
+  const ctx = document.getElementById('weeklyChart');
+  if (ctx) {
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['周一', '周二', '周三', '周四', '周五'],
+        datasets: [{
+          data: [2, 1, 3, 2, 0],
+          backgroundColor: ['#a5b4fc', '#a5b4fc', '#a5b4fc', '#818cf8', '#e2e8f0'],
+          borderRadius: 4,
+          barThickness: 16
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { display: false, beginAtZero: true },
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#94a3b8' } }
+        }
+      }
+    });
+  }
+</script>
+
+</body>
+</html>
