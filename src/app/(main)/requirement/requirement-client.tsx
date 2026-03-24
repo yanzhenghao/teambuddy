@@ -827,20 +827,15 @@ export function RequirementClient() {
 
         {/* Detail Panel */}
         <div className="flex-1 bg-white rounded-xl border border-surface-200 overflow-hidden flex flex-col">
-          {!selectedNode ? (
-            <EmptyState
-              title="选择需求查看详情"
-              description="从左侧需求树选择一个需求，查看详细信息和任务分配情况"
-            />
-          ) : mode === "chat" && selectedId === currentIRId ? (
-            /* Chat Mode for current IR */
+          {mode === "chat" && currentIRId ? (
+            /* Chat Mode — takes priority even before SWR data arrives */
             <div className="flex flex-col h-full">
               <div className="p-3 border-b border-surface-100 bg-surface-50 flex items-center justify-between">
                 <div>
                   <span className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-medium mr-2">
                     IR
                   </span>
-                  <span className="text-sm font-medium">{selectedNode.title}</span>
+                  <span className="text-sm font-medium">{selectedNode?.title || "需求分析中..."}</span>
                 </div>
                 <button
                   onClick={() => {
@@ -971,6 +966,11 @@ export function RequirementClient() {
                 </div>
               )}
             </div>
+          ) : !selectedNode ? (
+            <EmptyState
+              title="选择需求查看详情"
+              description="从左侧需求树选择一个需求，查看详细信息和任务分配情况"
+            />
           ) : (
             /* Detail View */
             <div className="flex flex-col h-full overflow-y-auto">
