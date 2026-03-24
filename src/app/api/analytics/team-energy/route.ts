@@ -4,6 +4,7 @@ import { callLLM } from "@/lib/llm-client";
 import { db } from "@/db";
 import { members, tasks, dailyUpdates, conversations } from "@/db/schema";
 import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { cachedJson, CACHE_PRESETS } from "@/lib/api-cache";
 
 interface MemberEnergy {
   memberId: string;
@@ -222,23 +223,23 @@ export async function GET(request: NextRequest) {
   if (useLLMEnhancement && memberEnergies.length > 0) {
     try {
       const llmEnhanced = await enhanceWithLLM(report, startStr, endStr);
-      return NextResponse.json({
+      return cachedJson({
         dateRange: { start: startStr, end: endStr },
         ...llmEnhanced,
-      });
+      }, CACHE_PRESETS.ANALYTICS);
     } catch (err) {
       console.error("LLM enhancement failed, returning basic report:", err);
-      return NextResponse.json({
+      return cachedJson({
         dateRange: { start: startStr, end: endStr },
         ...report,
-      });
+      }, CACHE_PRESETS.ANALYTICS);
     }
   }
 
-  return NextResponse.json({
+  return cachedJson({
     dateRange: { start: startStr, end: endStr },
     ...report,
-  });
+  }, CACHE_PRESETS.ANALYTICS);
 }
 
 /** Enhance report with LLM-powered analysis */

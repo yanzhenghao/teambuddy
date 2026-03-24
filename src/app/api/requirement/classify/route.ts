@@ -5,7 +5,7 @@ import { callLLM } from "@/lib/llm-client";
 const CLASSIFICATION_PROMPT = `你是一个需求分类助手。根据输入的需求描述，判断该需求属于哪种类型。
 
 需求类型定义：
-- **IR (注入需求/Initial Requirement)**：原始业务需求，通常来自客户、市场或产品战略，描述一个完整的业务目标或问题。适合作为顶层需求。
+- **IR (初始需求/Initial Requirement)**：原始业务需求，通常来自客户、市场或产品战略，描述一个完整的业务目标或问题。适合作为顶层需求。
 - **FuR (功能需求/Function Requirement)**：将IR分解为具体的功能模块，描述系统应提供的功能和服务。
 - **AR (分配需求/Allocation Requirement)**：将FuR进一步分解为可分配给具体开发人员的具体任务，通常与特定模块或功能实现相关。
 

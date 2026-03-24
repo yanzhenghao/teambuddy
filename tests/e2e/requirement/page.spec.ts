@@ -53,7 +53,7 @@ test.describe('需求管理页面', () => {
   })
 
   test('图例显示正确', async ({ page }) => {
-    await expect(page.locator('text=IR - 注入需求')).toBeVisible()
+    await expect(page.locator('text=IR - 初始需求')).toBeVisible()
     await expect(page.locator('text=FuR - 功能需求')).toBeVisible()
     await expect(page.locator('text=AR - 分配需求')).toBeVisible()
   })

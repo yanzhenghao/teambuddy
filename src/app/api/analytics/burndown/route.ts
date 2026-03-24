@@ -3,6 +3,7 @@ import { requirements, tasks } from "@/db/schema";
 import { eq, gte, lte, and } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { cachedJson, CACHE_PRESETS } from "@/lib/api-cache";
 
 interface BurndownDataPoint {
   date: string;
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
     predictedCompletionDate = end;
   }
 
-  return NextResponse.json({
+  return cachedJson({
     startDate: start,
     endDate: end,
     versionId: versionId || null,
@@ -107,5 +108,5 @@ export async function GET(request: NextRequest) {
       predictedCompletionDate,
       avgDailyCompletion: Math.round(avgDailyCompletion * 100) / 100,
     },
-  });
+  }, CACHE_PRESETS.ANALYTICS);
 }

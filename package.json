@@ -35,7 +35,10 @@
     "openai": "^6.32.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "recharts": "^3.8.0"
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.8.0",
+    "remark-gfm": "^4.0.1",
+    "swr": "^2.4.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

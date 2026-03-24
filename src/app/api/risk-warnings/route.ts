@@ -4,6 +4,7 @@ import { eq, desc, and } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getCurrentUser } from "@/lib/auth";
+import { cachedJson, CACHE_PRESETS } from "@/lib/api-cache";
 
 /** GET /api/risk-warnings — List risk warnings */
 export async function GET(request: NextRequest) {
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
     memberName: w.memberId ? memberMap.get(w.memberId) : null,
   }));
 
-  return NextResponse.json(enriched);
+  return cachedJson(enriched, CACHE_PRESETS.STATIC);
 }
 
 /** POST /api/risk-warnings — Generate risk warnings (scan for risks) */

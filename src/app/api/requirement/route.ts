@@ -2,14 +2,17 @@ import {
   RequirementEngine,
   TeamMemberProfile,
   ConversationMessage,
-  RequirementResult,
 } from "@/services/requirement-engine";
+import { extractTasks, stripTasksTag } from "@/services/requirement-engine";
 import { db } from "@/db";
 import { members, tasks, requirementConversations, requirements, requirementHistory } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getCurrentUser } from "@/lib/auth";
+import { callLLMStream } from "@/lib/llm-client";
+import { renderSkill } from "@/lib/skill-loader";
+import { contextCompressionMiddleware } from "@/lib/middlewares/context-compression";
 
 async function getTeamProfiles(): Promise<TeamMemberProfile[]> {
   // Batch query: get all active members and all their tasks in 2 queries
@@ -94,7 +97,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { action, sessionId, requirement, message, tasks: confirmedTasks, irId, title, versionId } = body;
+  const { action, sessionId, requirement, message, tasks: confirmedTasks, irId, title, versionId, summary, stream } = body;
 
   // ---- CREATE_IR: Create new Injected Requirement ----
   if (action === "create_ir") {
@@ -146,7 +149,16 @@ export async function POST(request: NextRequest) {
     // Initialize engine and start analysis (stateless, request-level)
     const teamMembers = await getTeamProfiles();
     const engine = new RequirementEngine();
-    const { response } = await engine.startAnalysis(title.trim(), teamMembers);
+    const { response, refinedTitle } = await engine.startAnalysis(title.trim(), teamMembers);
+
+    // Update IR title with LLM-refined version
+    if (refinedTitle) {
+      await db
+        .update(requirements)
+        .set({ title: refinedTitle, updatedAt: new Date().toISOString() })
+        .where(eq(requirements.id, irIdValue))
+        .run();
+    }
 
     // Update conversation with first message
     await db
@@ -174,7 +186,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Load conversation from DB (pure DB-driven, no in-memory cache)
+    // Load conversation from DB
     const conversation = await db
       .select()
       .from(requirementConversations)
@@ -198,9 +210,127 @@ export async function POST(request: NextRequest) {
     // Load history from DB
     const history: ConversationMessage[] = JSON.parse(conversation.messages || "[]");
     const teamMembers = await getTeamProfiles();
-    const engine = new RequirementEngine();
 
-    // Continue analysis (engine is stateless, all state passed as params)
+    // ---- SSE STREAMING MODE ----
+    if (stream === true) {
+      const teamContext = (() => {
+        let prompt = `\n团队成员信息：\n`;
+        for (const m of teamMembers) {
+          prompt += `- [${m.id}] ${m.name}（${m.role}）技能: ${m.skills.join(", ")} | 负载: ${m.currentLoad}/${m.maxLoad}\n`;
+        }
+        return prompt;
+      })();
+
+      const systemPrompt = renderSkill("requirement-analyst", { team_context: teamContext });
+
+      const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: `新需求：\n${conversation.requirement}\n\n请分析这个需求。`,
+        },
+      ];
+
+      for (const msg of history) {
+        messages.push({ role: msg.role as "user" | "assistant", content: msg.content });
+      }
+      messages.push({ role: "user" as const, content: message });
+
+      // Apply context compression middleware before streaming
+      const compressedReq = contextCompressionMiddleware.before(
+        { messages, config: { maxTokens: 1500 } }
+      );
+      const finalMessages = compressedReq.messages;
+
+      // Save user message to history immediately
+      const savedHistory = [...history, { role: "user" as const, content: message }];
+
+      const encoder = new TextEncoder();
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          // Send initial metadata
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "start", sessionId })}\n\n`));
+
+          let fullText = "";
+
+          try {
+            for await (const delta of callLLMStream(finalMessages, { maxTokens: 1500 })) {
+              fullText += delta;
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: "delta", content: delta })}\n\n`)
+              );
+            }
+
+            // Clean the response and extract result
+            const cleaned = fullText.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+            const cleanText = stripTasksTag(cleaned);
+            const result = extractTasks(cleaned);
+
+            // Update DB after stream completes
+            const finalHistory = [...savedHistory, { role: "assistant" as const, content: cleanText }];
+            await db
+              .update(requirementConversations)
+              .set({
+                messages: JSON.stringify(finalHistory),
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(requirementConversations.sessionId, sessionId))
+              .run();
+
+            let furId: string | null = null;
+            if (result) {
+              furId = randomUUID();
+              await db.insert(requirements).values({
+                id: furId,
+                parentId: ir?.id || null,
+                title: result.summary.slice(0, 100),
+                type: "fur",
+                status: "in_progress",
+                summary: result.summary,
+                conversationId: conversation.id,
+                taskCount: result.tasks.length,
+                completedTaskCount: 0,
+              }).run();
+
+              await db
+                .update(requirementConversations)
+                .set({
+                  status: "completed",
+                  result: JSON.stringify(result),
+                  messages: JSON.stringify(finalHistory),
+                  updatedAt: new Date().toISOString(),
+                })
+                .where(eq(requirementConversations.sessionId, sessionId))
+                .run();
+            }
+
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "done", result, furId, done: !!result })}\n\n`
+              )
+            );
+          } catch (err) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: "error", message: String(err) })}\n\n`)
+            );
+          }
+
+          controller.close();
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
+    }
+
+    // ---- NON-STREAMING MODE (default, E2E compatible) ----
+    const engine = new RequirementEngine();
     const { response, result } = await engine.continueAnalysis(
       conversation.requirement,
       teamMembers,
@@ -222,10 +352,9 @@ export async function POST(request: NextRequest) {
       .where(eq(requirementConversations.sessionId, sessionId))
       .run();
 
-    // If analysis complete, create FuR (Function Requirement)
+    // If analysis complete, create FuR
     let furId: string | null = null;
     if (result) {
-      // Create FuR (Function Requirement) under IR
       furId = randomUUID();
       await db.insert(requirements).values({
         id: furId,
@@ -239,7 +368,6 @@ export async function POST(request: NextRequest) {
         completedTaskCount: 0,
       }).run();
 
-      // Mark conversation as completed
       await db
         .update(requirementConversations)
         .set({
@@ -262,7 +390,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ---- CONFIRM: Accept tasks and write them to DB ----
-  // Creates FuR (if not exists) and AR with tasks allocated to specific people
+  // Creates FuR (if not exists) and one AR per task (each AR = smallest assignable unit)
   if (action === "confirm") {
     if (!confirmedTasks || !Array.isArray(confirmedTasks)) {
       return NextResponse.json(
@@ -285,28 +413,6 @@ export async function POST(request: NextRequest) {
       .where(eq(requirements.parentId, irId))
       .get();
 
-    // Pre-fetch assignee names (outside transaction - read only)
-    const assigneeIds = [...new Set(confirmedTasks.map((t) => t.suggestedAssignee?.memberId).filter(Boolean))];
-    const assigneeMap = new Map<string, string>();
-    if (assigneeIds.length > 0) {
-      const assigneeRecords = await db.select().from(members).all();
-      for (const m of assigneeRecords) {
-        if (assigneeIds.includes(m.id)) {
-          assigneeMap.set(m.id, m.name);
-        }
-      }
-    }
-
-    // Group tasks by suggested assignee to create AR per person
-    const tasksByAssignee = new Map<string, typeof confirmedTasks>();
-    for (const t of confirmedTasks) {
-      const assigneeId = t.suggestedAssignee?.memberId || "unassigned";
-      if (!tasksByAssignee.has(assigneeId)) {
-        tasksByAssignee.set(assigneeId, []);
-      }
-      tasksByAssignee.get(assigneeId)!.push(t);
-    }
-
     const arIds: string[] = [];
     const totalTasks = confirmedTasks.length;
 
@@ -318,10 +424,10 @@ export async function POST(request: NextRequest) {
         await tx.insert(requirements).values({
           id: furId,
           parentId: irId,
-          title: "功能需求",
+          title: summary || "功能需求",
           type: "fur",
           status: "in_progress",
-          summary: null,
+          summary: summary || null,
           taskCount: 0,
           completedTaskCount: 0,
         });
@@ -332,44 +438,38 @@ export async function POST(request: NextRequest) {
         throw new Error("Failed to create FuR");
       }
 
-      // Create AR per assignee and link tasks to AR
-      for (const [assigneeId, assigneeTasks] of tasksByAssignee) {
+      // Create one AR per task — each AR is the smallest assignable unit
+      for (const t of confirmedTasks) {
         const arId = randomUUID();
-        const assigneeName = assigneeId === "unassigned"
-          ? "未分配"
-          : assigneeMap.get(assigneeId) || "未知";
+        const taskAssigneeId = t.suggestedAssignee?.memberId || null;
 
         await tx.insert(requirements).values({
           id: arId,
           parentId: furRecord.id,
-          title: `[AR] ${assigneeName}`,
+          title: t.title,
           type: "ar",
           status: "in_progress",
-          summary: `分配给 ${assigneeName} 的任务`,
-          assigneeId: assigneeId === "unassigned" ? null : assigneeId,
-          taskCount: assigneeTasks.length,
+          summary: t.description,
+          assigneeId: taskAssigneeId,
+          taskCount: 1,
           completedTaskCount: 0,
         });
         arIds.push(arId);
 
-        // Create tasks linked to AR
-        for (const t of assigneeTasks) {
-          const taskId = `t${Date.now()}-${randomUUID().slice(0, 4)}`;
-          const taskAssigneeId = t.suggestedAssignee?.memberId || null;
-
-          await tx.insert(tasks).values({
-            id: taskId,
-            title: t.title,
-            description: t.description,
-            assigneeId: taskAssigneeId,
-            priority: t.priority || "P2",
-            status: taskAssigneeId ? "todo" : "unassigned",
-            category: t.category || "feature",
-            estimatedDays: t.estimatedDays || null,
-            createdFrom: "requirement_analysis",
-            requirementId: arId,
-          });
-        }
+        // Create linked task record
+        const taskId = `t${Date.now()}-${randomUUID().slice(0, 4)}`;
+        await tx.insert(tasks).values({
+          id: taskId,
+          title: t.title,
+          description: t.description,
+          assigneeId: taskAssigneeId,
+          priority: t.priority || "P2",
+          status: taskAssigneeId ? "todo" : "unassigned",
+          category: t.category || "feature",
+          estimatedDays: t.estimatedDays || null,
+          createdFrom: "requirement_analysis",
+          requirementId: arId,
+        });
       }
 
       // Update FuR task count

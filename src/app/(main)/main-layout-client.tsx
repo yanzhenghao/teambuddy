@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { MobileHeader } from "@/components/mobile-header";
+import { SWRProvider } from "./providers";
 
 export function MainLayoutClient({
   children,
@@ -12,17 +13,19 @@ export function MainLayoutClient({
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
-          {children}
-        </main>
+    <SWRProvider>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
+          <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </SWRProvider>
   );
 }

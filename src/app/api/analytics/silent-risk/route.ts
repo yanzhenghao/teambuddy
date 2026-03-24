@@ -3,6 +3,7 @@ import { members, tasks, dailyUpdates, conversations } from "@/db/schema";
 import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { cachedJson, CACHE_PRESETS } from "@/lib/api-cache";
 
 interface RiskAlert {
   memberId: string;
@@ -130,9 +131,9 @@ export async function GET(request: NextRequest) {
   const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
   alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
-  return NextResponse.json({
+  return cachedJson({
     dateRange: { start: startStr, end: endStr },
     alertCount: alerts.length,
     alerts,
-  });
+  }, CACHE_PRESETS.ANALYTICS);
 }

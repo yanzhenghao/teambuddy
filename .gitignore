@@ -42,8 +42,11 @@ next-env.d.ts
 
 # database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 /drizzle/
+local-replica.db*
 
 # cloudflare workers build artifacts
 .open-next/

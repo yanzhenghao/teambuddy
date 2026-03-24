@@ -109,7 +109,7 @@ export const users = sqliteTable("users", {
 });
 
 // ========== 需求层级表 (IR → FuR → AR) ==========
-// IR (Initial Requirement) - 注入需求，原始需求经MKT/SE/产品分析后分解到平台版本
+// IR (Initial Requirement) - 初始需求，原始需求经MKT/SE/产品分析后分解到平台版本
 // FuR (Function Requirement) - 功能需求，根据IR分配到具体的功能
 // AR (Allocation Requirement) - 分配需求，根据FuR分配到软件实现模块/具体人
 export const requirements = sqliteTable("requirements", {
@@ -213,6 +213,18 @@ export const riskWarnings = sqliteTable("risk_warnings", {
   statusIdx: index("risk_warnings_status_idx").on(table.status),
   memberIdx: index("risk_warnings_member_idx").on(table.memberId),
   requirementIdx: index("risk_warnings_req_idx").on(table.requirementId),
+}));
+
+// ========== 成员记忆表 ==========
+export const memberMemory = sqliteTable("member_memory", {
+  id: text("id").primaryKey(),
+  memberId: text("member_id").notNull().unique(),
+  memoryData: text("memory_data").notNull().default("[]"), // JSON array of {fact, createdAt}
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+}, (table) => ({
+  memberIdx: index("member_memory_member_idx").on(table.memberId),
 }));
 
 // ========== Session 表 ==========

@@ -3,6 +3,7 @@ import { members } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { cachedJson, CACHE_PRESETS } from "@/lib/api-cache";
 
 interface ExpertiseEntry {
   memberId: string;
@@ -78,16 +79,16 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, 5);
 
-    return NextResponse.json({
+    return cachedJson({
       query,
       matches,
       allExperts: expertiseMap,
-    });
+    }, CACHE_PRESETS.ANALYTICS);
   }
 
-  return NextResponse.json({
+  return cachedJson({
     expertiseMap,
-  });
+  }, CACHE_PRESETS.ANALYTICS);
 }
 
 /** Map member skills and roles to expertise areas */

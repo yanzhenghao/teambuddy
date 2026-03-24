@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
+import { cachedJson, CACHE_PRESETS } from "@/lib/api-cache";
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser(request);
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
     const arIds = arsWithVersion.map((ar) => ar.id);
 
     if (arIds.length === 0) {
-      return NextResponse.json([]);
+      return cachedJson([], CACHE_PRESETS.MODERATE);
     }
 
     allTasks = await db
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
     allTasks = allTasks.filter((t) => t.assigneeId === user.userId);
   }
 
-  return NextResponse.json(allTasks);
+  return cachedJson(allTasks, CACHE_PRESETS.MODERATE);
 }
 
 export async function POST(request: NextRequest) {

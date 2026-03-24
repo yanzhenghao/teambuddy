@@ -14,6 +14,8 @@ services:
       - TURSO_DATABASE_URL=${TURSO_DATABASE_URL}
       - TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN}
       - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+    volumes:
+      - replica-data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
@@ -29,3 +31,6 @@ services:
   #     - ./data:/data
   #   ports:
   #     - "8080:8080"
+
+volumes:
+  replica-data:
