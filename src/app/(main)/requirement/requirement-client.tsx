@@ -496,9 +496,14 @@ export function RequirementClient() {
 
   const handleSubmitIR = async () => {
     if (!newIRTitle.trim() || irSubmitting) return;
-    setIrSubmitting(true);
 
     const irTitle = newIRTitle.trim();
+
+    // Immediately close modal and enter chat — no waiting
+    setNewIRTitle("");
+    setMode("chat");
+    setChatMessages([]);
+    setChatLoading(true);
 
     try {
       const res = await fetch("/api/requirement", {
@@ -512,13 +517,10 @@ export function RequirementClient() {
         setCurrentIRId(data.id);
         setCurrentSessionId(data.sessionId);
         setSelectedId(data.id);
-        setMode("chat");
-        setChatMessages([]);
         setExpandedIds((prev) => new Set([...prev, data.id]));
-        setNewIRTitle("");
         refreshData();
 
-        // Auto-trigger streaming first AI message (no blocking LLM wait)
+        // Auto-trigger streaming first AI message
         startStream("/api/requirement", {
           action: "reply",
           sessionId: data.sessionId,
@@ -526,11 +528,15 @@ export function RequirementClient() {
           irId: data.id,
           stream: true,
         });
+      } else {
+        // API failed — go back to list
+        setMode("list");
       }
     } catch (err) {
       console.error("Failed to create IR:", err);
+      setMode("list");
     } finally {
-      setIrSubmitting(false);
+      setChatLoading(false);
     }
   };
 
@@ -864,6 +870,17 @@ export function RequirementClient() {
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* Typing indicator while waiting for first AI message */}
+                {chatMessages.length === 0 && !isStreaming && !streamingText && (chatLoading || currentSessionId) && (
+                  <div className="flex justify-start">
+                    <div className="bg-surface-100 text-gray-500 px-4 py-3 rounded-2xl rounded-bl-md text-sm flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      <span className="ml-2 text-gray-400">AI 正在分析需求...</span>
+                    </div>
+                  </div>
+                )}
                 {chatMessages.map((msg, i) => (
                   <div
                     key={i}
