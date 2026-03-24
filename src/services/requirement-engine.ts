@@ -109,6 +109,8 @@ export function extractIRTitle(text: string): string | null {
 
 export function stripTasksTag(text: string): string {
   let result = text.replace(/<tasks>[\s\S]*?<\/tasks>/, "").trim();
+  result = result.replace(/<ir_title>[\s\S]*?<\/ir_title>/g, "").trim();
+  result = result.replace(/<extracted>[\s\S]*?<\/extracted>/g, "").trim();
   result = result.replace(/```json\s*\{[\s\S]*"tasks"\s*:\s*\[[\s\S]*\]\s*\}[\s\S]*?```/g, "").trim();
   result = result.replace(/\{[\s\S]*"tasks"\s*:\s*\[[\s\S]*\]\s*\}/g, "").trim();
   return result;
