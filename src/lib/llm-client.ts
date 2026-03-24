@@ -36,7 +36,7 @@ function getLLMConfig() {
 }
 
 const DEFAULT_MAX_TOKENS = 1500;
-const DEFAULT_TIMEOUT_MS = 30000;
+const DEFAULT_TIMEOUT_MS = 60000;
 
 /**
  * Create a configured OpenAI client for LLM API

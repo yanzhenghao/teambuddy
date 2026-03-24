@@ -498,11 +498,13 @@ export function RequirementClient() {
     if (!newIRTitle.trim() || irSubmitting) return;
     setIrSubmitting(true);
 
+    const irTitle = newIRTitle.trim();
+
     try {
       const res = await fetch("/api/requirement", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create_ir", title: newIRTitle.trim() }),
+        body: JSON.stringify({ action: "create_ir", title: irTitle }),
       });
 
       if (res.ok) {
@@ -511,10 +513,19 @@ export function RequirementClient() {
         setCurrentSessionId(data.sessionId);
         setSelectedId(data.id);
         setMode("chat");
-        setChatMessages(data.message ? [{ role: "assistant", content: data.message }] : []);
+        setChatMessages([]);
         setExpandedIds((prev) => new Set([...prev, data.id]));
         setNewIRTitle("");
         refreshData();
+
+        // Auto-trigger streaming first AI message (no blocking LLM wait)
+        startStream("/api/requirement", {
+          action: "reply",
+          sessionId: data.sessionId,
+          message: `请分析这个需求：${irTitle}`,
+          irId: data.id,
+          stream: true,
+        });
       }
     } catch (err) {
       console.error("Failed to create IR:", err);

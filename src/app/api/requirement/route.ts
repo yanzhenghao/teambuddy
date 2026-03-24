@@ -3,7 +3,7 @@ import {
   TeamMemberProfile,
   ConversationMessage,
 } from "@/services/requirement-engine";
-import { extractTasks, stripTasksTag } from "@/services/requirement-engine";
+import { extractTasks, stripTasksTag, extractIRTitle } from "@/services/requirement-engine";
 import { db } from "@/db";
 import { members, tasks, requirementConversations, requirements, requirementHistory } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
@@ -109,71 +109,45 @@ export async function POST(request: NextRequest) {
     const sessionIdValue = randomUUID();
     const conversationId = randomUUID();
 
-    // Create IR in requirements table
-    await db.insert(requirements).values({
-      id: irIdValue,
-      parentId: null,
-      title: title.trim(),
-      type: "ir",
-      status: "pending",
-      summary: null,
-      conversationId,
-      taskCount: 0,
-      completedTaskCount: 0,
-      versionId: versionId || null,
-    }).run();
+    // Create IR + conversation records in parallel (no LLM call — fast path)
+    await Promise.all([
+      db.insert(requirements).values({
+        id: irIdValue,
+        parentId: null,
+        title: title.trim(),
+        type: "ir",
+        status: "pending",
+        summary: null,
+        conversationId,
+        taskCount: 0,
+        completedTaskCount: 0,
+        versionId: versionId || null,
+      }).run(),
+      db.insert(requirementHistory).values({
+        id: randomUUID(),
+        requirementId: irIdValue,
+        title: title.trim(),
+        summary: null,
+        status: "pending",
+        assigneeId: null,
+        versionId: versionId || null,
+        changeType: "create",
+        changedBy: user.userId,
+      }).run(),
+      db.insert(requirementConversations).values({
+        id: conversationId,
+        sessionId: sessionIdValue,
+        requirement: title.trim(),
+        messages: JSON.stringify([]),
+        result: null,
+        status: "active",
+      }).run(),
+    ]);
 
-    // Record creation history
-    await db.insert(requirementHistory).values({
-      id: randomUUID(),
-      requirementId: irIdValue,
-      title: title.trim(),
-      summary: null,
-      status: "pending",
-      assigneeId: null,
-      versionId: versionId || null,
-      changeType: "create",
-      changedBy: user.userId,
-    }).run();
-
-    // Create conversation record
-    await db.insert(requirementConversations).values({
-      id: conversationId,
-      sessionId: sessionIdValue,
-      requirement: title.trim(),
-      messages: JSON.stringify([]),
-      result: null,
-      status: "active",
-    }).run();
-
-    // Initialize engine and start analysis (stateless, request-level)
-    const teamMembers = await getTeamProfiles();
-    const engine = new RequirementEngine();
-    const { response, refinedTitle } = await engine.startAnalysis(title.trim(), teamMembers);
-
-    // Update IR title with LLM-refined version
-    if (refinedTitle) {
-      await db
-        .update(requirements)
-        .set({ title: refinedTitle, updatedAt: new Date().toISOString() })
-        .where(eq(requirements.id, irIdValue))
-        .run();
-    }
-
-    // Update conversation with first message
-    await db
-      .update(requirementConversations)
-      .set({
-        messages: JSON.stringify([{ role: "assistant", content: response }]),
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(requirementConversations.sessionId, sessionIdValue))
-      .run();
-
+    // Return immediately — client will use streaming /reply to get first AI message
     return NextResponse.json({
       id: irIdValue,
       sessionId: sessionIdValue,
-      message: response,
     });
   }
 
@@ -266,6 +240,16 @@ export async function POST(request: NextRequest) {
             const cleaned = fullText.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
             const cleanText = stripTasksTag(cleaned);
             const result = extractTasks(cleaned);
+
+            // Extract and update refined IR title if present
+            const refinedTitle = extractIRTitle(cleaned);
+            if (refinedTitle && ir) {
+              await db
+                .update(requirements)
+                .set({ title: refinedTitle, updatedAt: new Date().toISOString() })
+                .where(eq(requirements.id, ir.id))
+                .run();
+            }
 
             // Update DB after stream completes
             const finalHistory = [...savedHistory, { role: "assistant" as const, content: cleanText }];

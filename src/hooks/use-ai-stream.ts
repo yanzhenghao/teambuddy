@@ -17,16 +17,39 @@ export interface UseAIStreamReturn {
   stopStream: () => void;
 }
 
+const BATCH_INTERVAL_MS = 150; // Batch state updates every 150ms to reduce re-renders
+
 export function useAIStream(): UseAIStreamReturn {
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneData, setDoneData] = useState<DoneData | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const accumulatedRef = useRef("");
+  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushBatch = useCallback(() => {
+    if (accumulatedRef.current) {
+      const chunk = accumulatedRef.current;
+      accumulatedRef.current = "";
+      setStreamingText((prev) => prev + chunk);
+    }
+    batchTimerRef.current = null;
+  }, []);
 
   const stopStream = useCallback(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    if (batchTimerRef.current) {
+      clearTimeout(batchTimerRef.current);
+      batchTimerRef.current = null;
+    }
+    // Flush remaining text
+    if (accumulatedRef.current) {
+      const chunk = accumulatedRef.current;
+      accumulatedRef.current = "";
+      setStreamingText((prev) => prev + chunk);
+    }
     setIsStreaming(false);
   }, []);
 
@@ -37,6 +60,7 @@ export function useAIStream(): UseAIStreamReturn {
       setError(null);
       setDoneData(null);
       setIsStreaming(true);
+      accumulatedRef.current = "";
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -77,7 +101,11 @@ export function useAIStream(): UseAIStreamReturn {
             try {
               const parsed = JSON.parse(data);
               if (parsed.type === "delta" && typeof parsed.content === "string") {
-                setStreamingText((prev) => prev + parsed.content);
+                // Accumulate deltas, flush in batches
+                accumulatedRef.current += parsed.content;
+                if (!batchTimerRef.current) {
+                  batchTimerRef.current = setTimeout(flushBatch, BATCH_INTERVAL_MS);
+                }
               } else if (parsed.type === "done") {
                 setDoneData({
                   result: parsed.result,
@@ -90,6 +118,17 @@ export function useAIStream(): UseAIStreamReturn {
             }
           }
         }
+
+        // Flush any remaining accumulated text
+        if (batchTimerRef.current) {
+          clearTimeout(batchTimerRef.current);
+          batchTimerRef.current = null;
+        }
+        if (accumulatedRef.current) {
+          const chunk = accumulatedRef.current;
+          accumulatedRef.current = "";
+          setStreamingText((prev) => prev + chunk);
+        }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
           // stopped intentionally
@@ -101,7 +140,7 @@ export function useAIStream(): UseAIStreamReturn {
         abortControllerRef.current = null;
       }
     },
-    [stopStream]
+    [stopStream, flushBatch]
   );
 
   return { streamingText, isStreaming, error, doneData, startStream, stopStream };
