@@ -41,14 +41,15 @@ export default function LoginPage() {
 
       if (!res.ok) {
         setError(data.error || "登录失败");
+        setLoading(false);
         return;
       }
 
+      // Keep loading=true until navigation completes to avoid button flicker
       router.push("/");
       router.refresh();
     } catch {
       setError("网络错误，请重试");
-    } finally {
       setLoading(false);
     }
   }
