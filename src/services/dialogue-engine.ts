@@ -4,8 +4,6 @@ import { tagCleanerMiddleware } from "@/lib/middlewares/tag-cleaner";
 import { contextCompressionMiddleware } from "@/lib/middlewares/context-compression";
 import { callLLM } from "@/lib/llm-client";
 
-const DEFAULT_MODEL = "MiniMax-M2.7-highspeed";
-
 export interface StandupContext {
   memberName: string;
   memberRole: string;
@@ -129,10 +127,10 @@ export function stripExtractedTag(text: string): string {
 }
 
 export class DialogueEngine {
-  private model: string;
+  private model: string | undefined;
 
   constructor(apiKey?: string, model?: string) {
-    this.model = model || DEFAULT_MODEL;
+    this.model = model;
   }
 
   async startConversation(ctx: StandupContext): Promise<string> {

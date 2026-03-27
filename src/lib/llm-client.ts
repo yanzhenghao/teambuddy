@@ -1,37 +1,14 @@
 import OpenAI from "openai";
+import apiConfig from "../../config/api.json";
 
-// LLM Provider configuration via environment variables
-// Supports any OpenAI-compatible API: DeepSeek, Qwen, GLM, MiniMax, Moonshot, etc.
-//
-// .env.local 配置示例:
-//   DeepSeek (推荐，国内最快):
-//     LLM_BASE_URL=https://api.deepseek.com/v1
-//     LLM_API_KEY=sk-xxx
-//     LLM_MODEL=deepseek-chat
-//
-//   通义千问 (阿里):
-//     LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-//     LLM_API_KEY=sk-xxx
-//     LLM_MODEL=qwen-plus
-//
-//   智谱 GLM:
-//     LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-//     LLM_API_KEY=xxx
-//     LLM_MODEL=glm-4-flash
-//
-//   MiniMax (当前):
-//     LLM_BASE_URL=https://api.minimaxi.com/v1
-//     LLM_API_KEY=sk-xxx
-//     LLM_MODEL=MiniMax-M2.7-highspeed
-
-const MINIMAX_BASE_URL = "https://api.minimaxi.com/v1";
-const DEFAULT_MODEL = "MiniMax-M2.7-highspeed";
+// LLM API configuration loaded from config/api.json
+// Users can modify this file to point to their local LLM endpoint
 
 function getLLMConfig() {
   return {
-    baseURL: process.env.LLM_BASE_URL || MINIMAX_BASE_URL,
-    apiKey: process.env.LLM_API_KEY || process.env.MINIMAX_API_KEY || "",
-    model: process.env.LLM_MODEL || DEFAULT_MODEL,
+    baseURL: apiConfig.baseUrl,
+    apiKey: apiConfig.apiKey,
+    model: apiConfig.model,
   };
 }
 
@@ -56,7 +33,7 @@ export interface LLMConfig {
 }
 
 const DEFAULT_CONFIG: LLMConfig = {
-  model: DEFAULT_MODEL,
+  model: apiConfig.model,
   maxTokens: DEFAULT_MAX_TOKENS,
   timeoutMs: DEFAULT_TIMEOUT_MS,
 };
@@ -142,7 +119,6 @@ export function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/, "").trim();
 }
 
-export { MINIMAX_BASE_URL, DEFAULT_MODEL };
 
 /**
  * Async generator that yields deltas from a streaming LLM call.

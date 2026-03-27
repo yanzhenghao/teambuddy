@@ -1,12 +1,9 @@
-import OpenAI from "openai";
 import { db } from "@/db";
 import { members, dailyUpdates, tasks } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-
-const MINIMAX_BASE_URL = "https://api.minimaxi.com/v1";
-const DEFAULT_MODEL = "MiniMax-Text-01";
+import { callLLM } from "@/lib/llm-client";
 
 const SUMMARY_SYSTEM_PROMPT = `你是 TeamBuddy，一个研发小组的日报总结助手。请根据以下数据，用简洁的中文（2-3句话）总结今日团队整体状态。`;
 
@@ -40,24 +37,16 @@ export async function POST(request: NextRequest) {
     };
   });
 
-  const client = new OpenAI({
-    apiKey: process.env.MINIMAX_API_KEY,
-    baseURL: MINIMAX_BASE_URL,
-  });
-
-  const response = await client.chat.completions.create({
-    model: DEFAULT_MODEL,
-    max_tokens: 300,
-    messages: [
+  const summary = await callLLM(
+    [
       { role: "system", content: SUMMARY_SYSTEM_PROMPT },
       {
         role: "user",
         content: `请总结以下团队日报数据（日期: ${targetDate}）：\n${JSON.stringify(summaryData, null, 2)}`,
       },
     ],
-  });
-
-  const summary = response.choices[0]?.message?.content || "暂无数据";
+    { maxTokens: 300 }
+  );
 
   return NextResponse.json({ summary, date: targetDate });
 }
