@@ -1,0 +1,5 @@
+{
+  "baseUrl": "http://10.25.89.55:8000",
+  "apiKey": "sk-1234",
+  "model": "minimax-m2.5"
+}
